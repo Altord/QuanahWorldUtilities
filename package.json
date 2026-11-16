@@ -1,7 +1,7 @@
 {
   "name": "quanah-world-utilities",
   "productName": "Quanah World Utilities",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "3L Set Solver, Jewel Socket Scanner, and Progression Utilities for MapleStory Quanah World",
   "main": "main.js",
   "scripts": {

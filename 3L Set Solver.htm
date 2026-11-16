@@ -72,6 +72,11 @@ button.chip:not(:disabled):hover{background:color-mix(in oklab,var(--c) 30%,var(
 .ghost{background:transparent;border:1px solid var(--line);border-radius:6px;padding:5px 10px;color:var(--muted)}
 .ghost:hover{color:var(--fg);border-color:var(--muted)}
 .ghost.danger{color:var(--c-atk);border-color:var(--c-atk)}
+.btn-add{background:var(--good);border:1px solid var(--good);border-radius:6px;padding:6px 12px;color:#0b1912;font-weight:700}
+.btn-add:hover:not(:disabled){filter:brightness(1.08)}
+.btn-add:disabled{opacity:.35;cursor:not-allowed;background:var(--sunk);border-color:var(--line);color:var(--muted)}
+.btn-dim{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 11px;color:var(--fg);font-weight:500}
+.btn-dim:hover{border-color:var(--muted)}
 
 .slots{display:grid;gap:14px 20px;grid-auto-flow:column;grid-template-rows:repeat(3,auto);grid-template-columns:repeat(2,minmax(0,1fr))}
 @media (max-width:560px){ .slots{grid-auto-flow:row;grid-template-rows:none;grid-template-columns:minmax(0,1fr)} }
@@ -146,10 +151,12 @@ button.chip:not(:disabled):hover{background:color-mix(in oklab,var(--c) 30%,var(
 
 /* Overlay mode (?overlay=1): compact always-on-top panel drawn over the game */
 body.ov-mode{background:transparent;padding:0;overflow:hidden}
-.ov{background:rgba(27,34,48,.96);border:1px solid var(--line);border-radius:12px;padding:10px 12px 12px;display:flex;flex-direction:column;gap:10px;box-shadow:0 6px 24px rgba(0,0,0,.45);font-size:13px}
+.ov{background:rgba(27,34,48,.96);border:1px solid var(--line);border-radius:12px;padding:10px 12px 12px;display:flex;flex-direction:column;gap:10px;box-shadow:0 6px 24px rgba(0,0,0,.45);font-size:13px;max-height:100vh;overflow-y:auto}
 .ov-head{display:flex;justify-content:space-between;align-items:center;gap:8px;-webkit-app-region:drag;cursor:move}
-.ov-head h2{font-size:14px}
-.ov-head .row{-webkit-app-region:no-drag}
+.ov-head h2{font-size:14px;white-space:nowrap}
+.ov-head .row{-webkit-app-region:no-drag;flex-wrap:nowrap;gap:5px}
+.ov .ghost{padding:4px 8px;font-size:12px}
+.ov .ghost[aria-pressed="true"]{border-color:var(--good);color:var(--good);background:color-mix(in oklab,var(--good) 14%,var(--surface))}
 .ov .chip{font-size:12px;padding:2px 7px} .ov button.chip{padding:5px 9px;font-size:12px}
 .ov-note{color:var(--muted)} .ov-note.warn{color:var(--warn)}
 .ov-card{border:1px solid var(--line);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:8px;background:var(--sunk)}
@@ -281,7 +288,7 @@ const EXAMPLE = [
 ];
 let uid = 1;
 const mk = (lines, extra={}) => ({id:uid++, lines, sockets:Array.isArray(extra.sockets)?extra.sockets:null, prismatic:!!extra.prismatic, orb:!!extra.orb});
-let state = {items:SLOTS.map(()=>[]), sockItems:SLOTS.map(()=>[]), active:0, pending:[], pendSock:[], example:false, confirmClear:false, auto:true, build:'meta', focus:'lines', tab:'solver', checks:{}, mainStat:'STR', charClass:'', inspLv:1, scanLog:[]};
+let state = {items:SLOTS.map(()=>[]), sockItems:SLOTS.map(()=>[]), active:0, pending:[], pendSock:[], example:false, confirmClear:false, auto:true, build:'meta', focus:'lines', tab:'solver', checks:{}, mainStat:'STR', charClass:'', inspLv:1, scanLog:[], sockScanLog:[], celebrated:{}};
 const JEWELS = [
   {color:'Red', hex:'#e0484d', atk:'ATT', main:'STR', sec:'DEX'},
   {color:'Green', hex:'#1fa67a', atk:'ATT', main:'DEX', sec:'STR'},
@@ -324,21 +331,33 @@ function load(){
     if(raw && raw.focus) state.focus = raw.focus;
     if(raw && typeof raw.inspLv==='number') state.inspLv = raw.inspLv;
     if(raw && Array.isArray(raw.scanLog)) state.scanLog = raw.scanLog;
-    if(raw && Array.isArray(raw.sockItems) && raw.sockItems.length===SLOTS.length){
-      state.sockItems = raw.sockItems.map(a=>a.map(x=>mk(x.lines||x)));
-    }
+    if(raw && Array.isArray(raw.sockScanLog)) state.sockScanLog = raw.sockScanLog;
+    if(raw && raw.celebrated && typeof raw.celebrated==='object') state.celebrated = raw.celebrated;
     if(raw && Array.isArray(raw.sockItems) && raw.sockItems.length===SLOTS.length){
       state.sockItems = raw.sockItems.map(a=>a.map(x=>mk(x.lines||x)));
     }
     if(raw && raw.build && BUILDS[raw.build]){ state.build = raw.build; applyBuild(state.build); }
     if(raw && !raw.example && Array.isArray(raw.items) && raw.items.length===SLOTS.length){
-      state.items = raw.items.map(a=>a.filter(x=>noDupes(Array.isArray(x)?x:x.lines)).map(x=>Array.isArray(x)?mk(x):mk(x.lines,x))); return;
+      state.items = raw.items.map(a=>a.filter(x=>noDupes(Array.isArray(x)?x:x.lines)).map(x=>Array.isArray(x)?mk(x):mk(x.lines,x)));
+      syncItemSocketsToSockItems();
+      return;
     }
   }catch(e){}
   state.items = EXAMPLE.map(a=>a.map(l=>mk(l))); state.example = true;
 }
+function syncItemSocketsToSockItems(){
+  SLOTS.forEach((_,si)=>{
+    state.items[si].forEach(it=>{
+      if(!it.sockets || !it.sockets.length) return;
+      const sig = it.sockets.join(',');
+      if(!state.sockItems[si].some(s=>s.lines.join(',')===sig)){
+        state.sockItems[si].push(mk(it.sockets.slice()));
+      }
+    });
+  });
+}
 function save(){
-  try{ localStorage.setItem(KEY, JSON.stringify({build:state.build, focus:state.focus, mainStat:state.mainStat, charClass:state.charClass, inspLv:state.inspLv, checks:state.checks, scanLog:state.scanLog.slice(-500), sockItems:state.sockItems.map(a=>a.map(i=>({lines:i.lines}))), items:state.items.map(a=>a.map(i=>({lines:i.lines,sockets:i.sockets||null,prismatic:!!i.prismatic,orb:!!i.orb}))), example:state.example}));
+  try{ localStorage.setItem(KEY, JSON.stringify({build:state.build, focus:state.focus, mainStat:state.mainStat, charClass:state.charClass, inspLv:state.inspLv, checks:state.checks, celebrated:state.celebrated, scanLog:state.scanLog.slice(-500), sockScanLog:state.sockScanLog.slice(-500), sockItems:state.sockItems.map(a=>a.map(i=>({lines:i.lines}))), items:state.items.map(a=>a.map(i=>({lines:i.lines,sockets:i.sockets||null,prismatic:!!i.prismatic,orb:!!i.orb}))), example:state.example}));
     if(BRIDGE && BRIDGE.notifySync) BRIDGE.notifySync();
   }catch(e){}
 }
@@ -379,13 +398,38 @@ function attachSocketsToExisting(p){
   save();
 }
 function recordScan(p){
-  if(!p || p.slot===null || p.lines.length!==3) return;
-  const sig = p.slot+':'+[...p.lines].sort().join(',');
+  if(!p || p.slot===null) return;
   const now = Date.now();
-  if(state.scanLog.some(e=>e.sig===sig && now-e.t<60000)) return; // ignore duplicate re-hovers within 1 min
-  const ev = evalItem(p);
-  state.scanLog.push({sig, hit:ev.gain>0 && ev.after===TOTAL, t:now});
+  if(p.lines.length===3){
+    const sig = p.slot+':'+[...p.lines].sort().join(',');
+    if(!state.scanLog.some(e=>e.sig===sig && now-e.t<60000)){
+      const ev = evalItem(p);
+      state.scanLog.push({sig, hit:ev.gain>0 && ev.after===TOTAL, t:now});
+    }
+  }
+  if(p.sockets && p.sockets.length){
+    const sSig = p.slot+':'+p.sockets.join(',');
+    if(!state.sockScanLog.some(e=>e.sig===sSig && now-e.t<60000)){
+      const se = evalSockets(p.sockets);
+      state.sockScanLog.push({sig:sSig, hit:se.score===3 && se.hasPrism, t:now});
+    }
+  }
   save();
+}
+function renderSockProbs(needSlots){
+  const matchCount = JEWELS.filter(j=>j.main===state.mainStat).length; // 2 for STR, 1 for DEX/LUK/INT
+  // Probability a 3-socket Prismatic drop on a needed slot has 2 matching non-prismatic colors: (needSlots/6) * (matchCount/5)^2
+  const p = (needSlots / 6) * Math.pow(matchCount / 5, 2);
+  const pOut = (p * 100).toFixed(2);
+  const n = state.sockScanLog.length;
+  const pCum = n ? ((1 - Math.pow(1 - p, n)) * 100).toFixed(1) : '0.0';
+  const tOut = `Chance a 3-socket Prismatic drop lands on one of your ${needSlots} needed slots with 2 matching ${state.mainStat} jewels: (${needSlots}/6) × (${matchCount}/5)² = ${pOut}%.`;
+  const tScan = `Cumulative chance of seeing a 3/3 perfect socket drop across ${n} unique socket scans: 1 - (1 - ${pOut}%)^${n} = ${pCum}%.`;
+  return `<div class="prob-row">
+    <span class="prob-pill" title="${tOut}">By outs: <b>${pOut}%</b> (${needSlots}/6 slots)</span>
+    <span class="prob-pill" title="${tScan}">By scans: <b>${pCum}%</b> (${n} scan${n===1?'':'s'})</span>
+    ${n?`<button class="ghost" style="padding:2px 6px;font-size:11px" data-act="sock-scan-reset" title="Clear socket scan history">Reset</button>`:''}
+  </div>`;
 }
 function renderProbs(huntLen){
   const totalCombos = SLOTS.length * 364; // 6 slots * C(14,3) distinct 3L combos
@@ -523,8 +567,8 @@ function render(){
   if(state.focus==='sockets') return renderSocketSolver();
   const res = solve(state.items);
   const doneNow = res.best===TOTAL;
-  if(wasDone===false && doneNow) celebrate();
-  wasDone = doneNow;
+  if(doneNow && !state.celebrated[state.build]){ state.celebrated[state.build] = true; save(); celebrate(); }
+  else if(!doneNow && state.celebrated[state.build]){ delete state.celebrated[state.build]; save(); }
   const total =state.items.reduce((a,b)=>a+b.length,0);
 
   const pend = [0,1,2].map(i => state.pending[i] ? chip(state.pending[i]) : `<span class="chip empty">line ${i+1}</span>`).join('');
@@ -569,18 +613,27 @@ function render(){
       <span class="pips" title="${res.counts[i]} of ${s.t}">${Array.from({length:s.t},(_,j)=>`<span class="pip ${j<res.counts[i]?'on':''}"></span>`).join('')}</span></div>`; }).join('')}</div>
     <div class="set"><span class="label">Equip these</span>
       ${SLOTS.map((s,si)=>{ const it=res.picks[si];
-        return `<div class="item"><span class="slotname">${s}</span>${it?`<span class="num">#${state.items[si].indexOf(it)+1}${it.prismatic?' 💎':''}</span>
-          <span class="lines">${it.lines.map((k,j)=>chip(k,res.used[si][j]?'':'wasted')).join('')}</span>`:`<span class="muted">nothing yet</span>`}</div>`; }).join('')}
+        return `<div class="item"><span class="slotname">${s}</span>${it?`<span class="num">#${state.items[si].indexOf(it)+1}</span>
+          <span class="lines">${it.lines.map((k,j)=>chip(k,res.used[si][j]?'':'wasted')).join('')}${it.sockets?`<span class="socks">${it.sockets.map(c=>sockIcon(c)).join('')}</span>`:''}</span>`:`<span class="muted">nothing yet</span>`}</div>`; }).join('')}
       ${res.used.some(u=>u.includes(false))?`<span class="muted">Struck-through lines do not count toward the goal.</span>`:''}
-      ${res.picks.some(it=>it&&it.prismatic)?`<div class="note-box">💎 Prismatic socket equipped — matching hologram jewels can push Lv. 3 lines to Lv. 4+.</div>`:''}
+      ${(()=>{
+        const prismSlots = SLOTS.filter((_,si)=>res.picks[si] && res.picks[si].sockets && res.picks[si].sockets.includes('prismatic'));
+        const lv3 = STATS.filter(s=>s.t>=3 && res.counts[IDX[s.k]]>=3).map(s=>s.n);
+        if(!prismSlots.length || !lv3.length) return '';
+        return `<div class="note-box"><b>Prismatic +4+ ready (${prismSlots.join(', ')}):</b> ${lv3.join(', ')} at Lv. 3 can exceed Lv. 3 with matching Prismatic Jewels.</div>`;
+      })()}
     </div>${hunt}`;
 }
 
 function renderSocketSolver(){
+  syncItemSocketsToSockItems();
   const picks = bestSockPicks();
   const matchColors = JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join(' / ');
   const totalSock = state.sockItems.reduce((a,b)=>a+b.length,0);
   const score = picks.reduce((sum,it)=>sum+(it?evalSockets(it.lines).score:0),0);
+  const prismCount = picks.filter(it=>it && evalSockets(it.lines).hasPrism).length;
+  const statCount = score - prismCount;
+  const needSlots = SLOTS.map((s,si)=>({s,si,it:picks[si],ev:picks[si]?evalSockets(picks[si].lines):null})).filter(x=>!x.ev || x.ev.score<3 || !x.ev.hasPrism);
   const pend = [0,1,2].map(i=>state.pendSock[i]?sockChip(state.pendSock[i]):`<span class="chip empty">socket ${i+1}</span>`).join('');
   document.getElementById('add').innerHTML = `
     <div class="row spread"><h2>Add a socket piece</h2><span class="muted">Pick the slot, then tap its 3 jewel sockets (need <b>Prismatic</b> + <b>${matchColors}</b> for ${state.mainStat})</span></div>
@@ -600,16 +653,22 @@ function renderSocketSolver(){
         : `<div class="none">No socket ${s.toLowerCase()} yet</div>`}
     </div>`).join('')}</div>`;
 
-  const done = score===18;
+  const done = score===18 && prismCount===6;
   document.getElementById('result').innerHTML = `
     <div class="row spread"><h2>Best socket set (${state.mainStat})</h2><span class="pill ${done?'ok':'short'}">${done?'Perfect 18/18':`${18-score} sockets short`}</span></div>
-    <div class="score"><span class="big">${score}</span><span class="of">of 18 matching sockets</span></div>
-    <div class="note-box">Target for <b>${state.mainStat}</b>: <b>Prismatic</b> (1 per piece for +4+ lines) + <b>${matchColors}</b>. Use Orbs to transfer your 3L lines onto these pieces.</div>
+    <div class="score"><span class="big">${score}</span><span class="of">of 18 matching sockets (${prismCount}/6 Prismatic)</span></div>
+    <div class="reqs" style="grid-template-columns:1fr">
+      <div class="req s-prismatic ${prismCount<6?'miss':''}"><span class="name">Prismatic (${prismCount}/6)</span><span class="pips">${Array.from({length:6},(_,j)=>`<span class="pip ${j<prismCount?'on':''}"></span>`).join('')}</span></div>
+      <div class="req s-${JEWELS.find(j=>j.main===state.mainStat).color.toLowerCase()} ${statCount<12?'miss':''}"><span class="name">${matchColors} (${statCount}/12)</span><span class="pips">${Array.from({length:12},(_,j)=>`<span class="pip ${j<statCount?'on':''}"></span>`).join('')}</span></div>
+    </div>
     <div class="set"><span class="label">Best sockets per slot</span>
       ${SLOTS.map((s,si)=>{ const it=picks[si]; const ev=it?evalSockets(it.lines):null;
         return `<div class="item"><span class="slotname">${s}</span>${it?`<span class="num">#${state.sockItems[si].indexOf(it)+1}</span>
           <span class="lines">${it.lines.map((c,j)=>sockChip(c,ev.hits[j]?'':'wasted')).join('')}</span>`:`<span class="muted">nothing yet</span>`}</div>`; }).join('')}
-    </div>`;
+    </div>
+    ${needSlots.length?`<div class="hunt"><span class="label">Slots still needing 3/3 sockets (${needSlots.length})</span>
+      ${renderSockProbs(needSlots.length)}
+      ${needSlots.map(x=>`<div class="opt"><b>${x.s}</b><span class="muted">${x.ev?`${x.ev.score}/3${x.ev.hasPrism?'':' (needs Prismatic)'}`:'needs Prismatic + 2 '+matchColors}</span></div>`).join('')}</div>`:''}`;
 }
 
 // ---------- celebration when the set reaches 18/18 ----------
@@ -673,6 +732,18 @@ const OV = new URLSearchParams(location.search).has('overlay');
 const HUD = new URLSearchParams(location.search).has('hud');
 const BRIDGE = window.quanah || null;
 if(BRIDGE && BRIDGE.onSync) BRIDGE.onSync(() => { syncFromStorage(); render(); });
+if(BRIDGE && BRIDGE.onQuickAdd) BRIDGE.onQuickAdd(() => {
+  const sc = state.scan;
+  if(!sc || sc.slot===null) return;
+  syncFromStorage();
+  if(state.focus==='sockets'){
+    if(sc.sockets && sc.sockets.length===3){ state.sockItems[sc.slot].push(mk(sc.sockets.slice())); state.scan=null; save(); render(); }
+  } else if(sc.lines.length===3 && noDupes(sc.lines)){
+    state.items[sc.slot].push(mk(sc.lines.slice(), {sockets:sc.sockets, prismatic:sc.prismatic}));
+    if(sc.sockets && sc.sockets.length===3) state.sockItems[sc.slot].push(mk(sc.sockets.slice()));
+    state.example=false; state.scan=null; save(); render();
+  }
+});
 function renderHud(){
   const root = document.getElementById('ov-root'), sc = state.scan;
   if(!sc || (!sc.lines.length && sc.slot===null && !sc.sockets)){ root.innerHTML=''; if(BRIDGE) BRIDGE.hideHud(); return; }
@@ -683,7 +754,7 @@ function renderHud(){
     const cls = win ? 'win' : se.score>=2 ? 'good' : 'bad';
     const verdict = win ? `<span class="pill win">★ 3/3 PERFECT SOCKETS ★</span>` : se.score>=2 ? `<span class="pill ok">${se.score}/3 GOOD SOCKETS</span>` : `<span class="pill short">PASS (${se.score}/3 sockets)</span>`;
     const chips = se.sockets.map((c,i)=>`<span class="chip s-${c} ${se.hits[i]?'need':'wasted'}">${SOCK_LABEL[c]||c}</span>`).join('');
-    root.innerHTML = `<div class="hud ${cls}"><div class="hud-top"><span class="hud-slot">${slot} • ${state.mainStat}</span>${verdict}</div><div class="row">${chips}</div></div>`;
+    root.innerHTML = `<div class="hud ${cls}"><div class="hud-top"><span class="hud-slot">${slot} • ${state.mainStat}</span>${verdict}</div><div class="row">${chips}${sc.slot!==null?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`;
     const box = root.firstElementChild;
     if(BRIDGE && box) BRIDGE.showHud(box.offsetWidth + 2, box.offsetHeight + 2);
     return;
@@ -711,7 +782,7 @@ function renderHud(){
     const a = (i/8)*Math.PI*2, r = 56 + (i%2)*20;
     return `<span class="spark" style="background:${c};--dx:${Math.round(Math.cos(a)*r)}px;--dy:${Math.round(Math.sin(a)*r)}px;animation-delay:${(i*0.1).toFixed(2)}s"></span>`;
   }).join('') : '';
-  root.innerHTML = `<div class="hud ${cls}">${sparks}<div class="hud-top"><span class="hud-slot">${slot}</span>${verdict}</div><div class="row">${chips}</div></div>`;
+  root.innerHTML = `<div class="hud ${cls}">${sparks}<div class="hud-top"><span class="hud-slot">${slot}</span>${verdict}</div><div class="row">${chips}${ready?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`;
   const box = root.firstElementChild;
   if(BRIDGE && box) BRIDGE.showHud(box.offsetWidth + 2, box.offsetHeight + 2);
 }
@@ -740,8 +811,8 @@ function renderOverlay(){
         ${se ? `<div class="row">${se.sockets.map((c,i)=>sockChip(c,se.hits[i]?'need':'wasted')).join('')}</div>
           <div class="verdict ${win||se.score>=2?'yes':'no'}">${win?'★ 3/3 PERFECT SOCKETS ★':se.score>=2?`${se.score}/3 GOOD SOCKETS (${state.mainStat})`:`PASS (${se.score}/3 matching sockets)`}</div>`
           : `<div class="ov-note warn">No jewel sockets detected on this item.</div>`}
-        <div class="row">${sc.sockets&&sc.slot!==null?`<button class="ghost" data-act="ov-add-sock">Add sockets</button>`:''}
-          <button class="ghost" id="ov-dismiss" data-act="ov-dismiss">Dismiss</button></div></div>`;
+        <div class="row">${sc.sockets&&sc.slot!==null?`<button class="btn-add" data-act="ov-add-sock">Add sockets (F7)</button>`:''}
+          <button class="btn-dim" id="ov-dismiss" data-act="ov-dismiss">Dismiss</button></div></div>`;
     } else {
       const ready = sc.slot!==null && sc.lines.length===3, ev = ready ? evalItem(sc) : null;
       const slotName = sc.slot===null ? 'item' : SLOTS[sc.slot].toLowerCase();
@@ -757,21 +828,24 @@ function renderOverlay(){
             ? `<div class="verdict yes">Keep it: opens +${ev.outsGain} more 1-drop finish${ev.outsGain===1?'':'es'} (${ev.outsBefore}→${ev.outsAfter})</div>`
             : `<div class="verdict no">No gain for ${slotName}. Leave it.</div>`) : ''}
         ${sc.sockets?(()=>{ const se=evalSockets(sc.sockets); return `<div class="row"><span class="muted" style="font-size:11.5px">Sockets:</span>${se.sockets.map((c,i)=>sockIcon(c,se.hits[i]?'need':'wasted')).join('')}</div>`; })():''}
-        <div class="row"><button class="ghost" id="ov-add" data-act="ov-add" ${ready?'':'disabled'}>Add to my gear</button>
-          <button class="ghost" id="ov-dismiss" data-act="ov-dismiss">Dismiss</button></div></div>`;
+        <div class="row"><button class="btn-add" id="ov-add" data-act="ov-add" ${ready?'':'disabled'}>Add to my gear (F7)</button>
+          <button class="btn-dim" id="ov-dismiss" data-act="ov-dismiss">Dismiss</button></div></div>`;
     }
   }
   let hunt = '';
   if(state.focus==='sockets'){
+    syncItemSocketsToSockItems();
     const picks = bestSockPicks();
     const sScore = picks.reduce((sum,it)=>sum+(it?evalSockets(it.lines).score:0),0);
+    const needCnt = picks.filter(it=>!it || evalSockets(it.lines).score<3 || !evalSockets(it.lines).hasPrism).length;
     hunt = `<div class="hunt"><span class="label">Best sockets per slot (${sScore}/18)</span>
+      ${needCnt?renderSockProbs(needCnt):''}
       ${SLOTS.map((s,si)=>{ const it=picks[si]; const ev=it?evalSockets(it.lines):null;
         return `<div class="opt"><b>${s}</b>${it?ev.sockets.map((c,j)=>sockChip(c,ev.hits[j]?'':'wasted')).join(''):`<span class="muted">none yet</span>`}</div>`; }).join('')}</div>`;
   } else if(!done){
     const list = res.hunt, LIMIT = 4;
     const shown = state.huntOpen ? list : list.slice(0,LIMIT);
-    hunt = list.length ? `<div class="hunt"><span class="label">One drop finishes it (${list.length})</span>
+    hunt = list.length ? `<div class="hunt"><div class="row spread"><span class="label">One drop finishes it (${list.length})</span>${list.length>LIMIT&&state.huntOpen?`<button class="ghost" data-act="hunt-toggle">Show fewer</button>`:''}</div>
       ${renderProbs(list.length)}
       ${shown.map(h=>`<div class="opt"><b>${SLOTS[h.slot]}</b>${h.need.map(k=>chip(k)).join('')}</div>`).join('')}
       ${list.length>LIMIT?`<button class="ghost" id="hunt-toggle" data-act="hunt-toggle">${state.huntOpen?'Show fewer':`Show ${list.length-LIMIT} more`}</button>`:''}</div>`
@@ -786,13 +860,14 @@ function renderOverlay(){
       <button class="x" data-act="${sockMode?'del-sock':'del'}" data-s="${si}" data-id="${it.id}" aria-label="Remove ${s} #${n+1}">&times;</button></div>`).join('')).join('') || `<span class="muted">No gear added yet.</span>`}</div>` : '';
   document.getElementById('ov-root').innerHTML = `<div class="ov">
     <div class="ov-head"><h2>${sockMode?`Sockets <span class="muted" style="font-weight:500">${sockScore}/18</span>`:`3L Solver <span class="muted" style="font-weight:500">${res.best}/${TOTAL}</span>`}</h2>
-      <div class="row">${BRIDGE?`<button class="ghost" id="ov-main" data-act="ov-main">Full UI</button><button class="ghost" id="ov-gear" data-act="ov-gear" aria-pressed="${!!state.gearOpen}">Gear (${totalGear})</button><button class="ghost" id="ov-auto" data-act="ov-auto" aria-pressed="${state.auto}">${state.auto?'Auto: ON':'Auto: OFF'}</button><button class="ghost" id="ov-scan" data-act="ov-scan">Scan</button>`:''}<button class="ghost" id="ov-close" data-act="ov-close" aria-label="Hide overlay (F9)">&times;</button></div></div>
-    <div class="row spread"><span class="muted" style="font-size:11.5px">Focus</span><div class="seg"><button data-act="focus" data-f="lines" aria-pressed="${state.focus==='lines'}">3L Lines</button><button data-act="focus" data-f="sockets" aria-pressed="${state.focus==='sockets'}">Sockets</button></div></div>
+      <div class="row">${BRIDGE?`<button class="ghost" id="ov-auto" data-act="ov-auto" aria-pressed="${state.auto}">${state.auto?'Auto':'Manual'}</button><button class="ghost" id="ov-scan" data-act="ov-scan">Scan</button>`:''}<button class="ghost" id="ov-close" data-act="ov-close" aria-label="Hide overlay (F9)">&times;</button></div></div>
+    <div class="row spread"><div class="row" style="gap:5px">${BRIDGE?`<button class="ghost" id="ov-main" data-act="ov-main">Full UI</button><button class="ghost" id="ov-gear" data-act="ov-gear" aria-pressed="${!!state.gearOpen}">Gear (${totalGear})</button>`:''}</div>
+      <div class="seg"><button data-act="focus" data-f="lines" aria-pressed="${state.focus==='lines'}">3L Lines</button><button data-act="focus" data-f="sockets" aria-pressed="${state.focus==='sockets'}">Sockets</button></div></div>
     ${sockMode?'':`<div class="row spread"><span class="muted" style="font-size:11.5px">Build</span><div class="seg">${Object.entries(BUILDS).map(([k,b])=>`<button data-act="build" data-b="${k}" aria-pressed="${state.build===k}">${b.name}</button>`).join('')}</div></div>`}
     <div class="row spread"><span class="muted" style="font-size:11.5px">Jewel (${state.mainStat}): <b>${JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join(' / ')}</b></span><div class="seg">${['STR','DEX','LUK','INT'].map(st=>`<button data-act="mstat" data-s="${st}" aria-pressed="${state.mainStat===st}">${st}</button>`).join('')}</div></div>
     ${state.example?`<div class="ov-note warn">Showing example gear. Clear it in the main window.</div>`:''}
     ${card}${hunt}${gearDrawer}${done?`<div class="verdict yes">Set complete!</div>`:''}</div>`;
-  if(BRIDGE) BRIDGE.resize(document.querySelector('.ov').offsetHeight + 2);
+  if(BRIDGE) BRIDGE.resize(document.querySelector('.ov').scrollHeight + 4);
 }
 function syncFromStorage(){
   try{ const raw = JSON.parse(localStorage.getItem(KEY));
@@ -802,15 +877,16 @@ function syncFromStorage(){
     if(raw && raw.focus) state.focus = raw.focus;
     if(raw && typeof raw.inspLv==='number') state.inspLv = raw.inspLv;
     if(raw && Array.isArray(raw.scanLog)) state.scanLog = raw.scanLog;
-    if(raw && Array.isArray(raw.sockItems) && raw.sockItems.length===SLOTS.length){
-      state.sockItems = raw.sockItems.map(a=>a.map(x=>mk(x.lines||x)));
-    }
+    if(raw && Array.isArray(raw.sockScanLog)) state.sockScanLog = raw.sockScanLog;
+    if(raw && raw.celebrated && typeof raw.celebrated==='object') state.celebrated = raw.celebrated;
     if(raw && Array.isArray(raw.sockItems) && raw.sockItems.length===SLOTS.length){
       state.sockItems = raw.sockItems.map(a=>a.map(x=>mk(x.lines||x)));
     }
     if(raw && raw.build && BUILDS[raw.build]){ state.build = raw.build; applyBuild(state.build); }
     if(raw && !raw.example && Array.isArray(raw.items) && raw.items.length===SLOTS.length){
-      state.items = raw.items.map(a=>a.filter(x=>noDupes(Array.isArray(x)?x:x.lines)).map(x=>Array.isArray(x)?mk(x):mk(x.lines,x))); state.example = false; }
+      state.items = raw.items.map(a=>a.filter(x=>noDupes(Array.isArray(x)?x:x.lines)).map(x=>Array.isArray(x)?mk(x):mk(x.lines,x))); state.example = false;
+      syncItemSocketsToSockItems();
+    }
   }catch(e){}
 }
 addEventListener('storage', e=>{ if(e.key===KEY){ syncFromStorage(); render(); } });
@@ -854,6 +930,7 @@ document.addEventListener('click', e=>{
   else if(act==='tab'){ state.tab = b.dataset.t; }
   else if(act==='focus'){ state.focus = b.dataset.f; }
   else if(act==='scan-reset'){ state.scanLog = []; }
+  else if(act==='sock-scan-reset'){ state.sockScanLog = []; }
   else if(act==='insp'){ state.inspLv = Math.max(1, Math.min(200, (state.inspLv||1) + (+b.dataset.d))); }
   else if(act==='mstat'){ state.mainStat = b.dataset.s; }
   else if(act==='chk'){ state.checks[b.dataset.k] = b.checked; }

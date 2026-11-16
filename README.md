@@ -1,4 +1,4 @@
-# Quanah World Utilities (v0.1.0)
+# Quanah World Utilities (v0.1.1)
 
 Desktop 3L Set Solver, Jewel Socket Scanner, and Progression Assistant for MapleStory Quanah World.
 
@@ -10,7 +10,7 @@ Desktop 3L Set Solver, Jewel Socket Scanner, and Progression Assistant for Maple
 
 ## Download
 Grab the latest Windows build from **[Releases](https://github.com/Altord/QuanahWorldUtilities/releases)**:
-- `Quanah World Utilities 0.1.0.exe` — Portable single-file `.exe` (no installation required).
-- `Quanah World Utilities Setup 0.1.0.exe` — Windows installer.
+- `Quanah World Utilities 0.1.1.exe` — Portable single-file `.exe` (no installation required).
+- `Quanah World Utilities Setup 0.1.1.exe` — Windows installer.
 
 > **Tip:** Run MapleStory in **Windowed** or **Borderless** mode so the overlay can appear on top of the game.

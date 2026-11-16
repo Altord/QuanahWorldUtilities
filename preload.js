@@ -11,5 +11,6 @@ contextBridge.exposeInMainWorld('quanah', {
   showMain: () => ipcRenderer.send('main-show'),
   notifySync: () => ipcRenderer.send('sync-state'),
   onSync: cb => ipcRenderer.on('sync-state', () => cb()),
+  onQuickAdd: cb => ipcRenderer.on('quick-add', () => cb()),
   onScan: cb => ipcRenderer.on('scan-result', (_e, msg) => cb(msg))
 });

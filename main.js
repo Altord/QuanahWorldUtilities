@@ -273,10 +273,17 @@ app.whenReady().then(() => {
   const okAlt = globalShortcut.register('CommandOrControl+Shift+S', () => scan(false));
   if (!okF8) console.warn('Could not register global shortcut F8');
   if (!okAlt) console.warn('Could not register global shortcut Ctrl+Shift+S');
+  globalShortcut.register('F7', () => { if (overlay && !overlay.isDestroyed()) overlay.webContents.send('quick-add'); });
   globalShortcut.register('F9', () => overlay.isVisible() ? overlay.hide() : overlay.showInactive());
   ipcMain.handle('scan', () => scan(true));
   ipcMain.on('set-auto', (_e, on) => { autoScan = !!on; scannedAt = null; });
-  ipcMain.on('overlay-resize', (_e, h) => { if (overlay && h > 0) overlay.setContentSize(390, Math.min(Math.ceil(h), 900)); });
+  ipcMain.on('overlay-resize', (_e, h) => {
+    if (!overlay || overlay.isDestroyed() || !(h > 0)) return;
+    const b = overlay.getBounds();
+    const wa = screen.getDisplayNearestPoint({ x: b.x, y: b.y }).workArea;
+    const maxH = Math.max(200, wa.y + wa.height - b.y - 12);
+    overlay.setBounds({ x: b.x, y: b.y, width: 390, height: Math.min(Math.ceil(h), maxH) });
+  });
   ipcMain.on('hud-show', (_e, w, h) => {
     if (!hud || !scannedAt) return;
     const d = screen.getDisplayNearestPoint(scannedAt).workArea;
