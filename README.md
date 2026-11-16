@@ -1,4 +1,4 @@
-# Quanah World Utilities (v0.1.1)
+# Quanah World Utilities (v0.1.2)
 
 Desktop 3L Set Solver, Jewel Socket Scanner, and Progression Assistant for MapleStory Quanah World.
 
@@ -8,9 +8,13 @@ Desktop 3L Set Solver, Jewel Socket Scanner, and Progression Assistant for Maple
 - **Socket Focus Mode:** Detects jewel sockets (`Prismatic`, `Red`, `Green`, `Gray`, `Purple`, `Blue`) directly from item icons and tracks your best socket pieces for Orb transfers.
 - **Quanah Guide Tabs:** `Pre-Leap` checklist, `Jewels` color table, `Dungeon` 5-room & loot reference, and `Progression` (Inspector inheritance, Mapae Module, Inspector Badge, Bossing & Known Bugs).
 
-## Download
+## Web Tool (No Download)
+All tabs (**3L Set Solver**, **Socket Focus**, **Pre-Leap**, **Jewels**, **Dungeon**, **Progression**) also run directly in your browser (without the in-game screen scanner):
+- Enable **GitHub Pages** (Settings → Pages → `main` branch `/ (root)`) to host it at `https://altord.github.io/QuanahWorldUtilities/`, or open `3L Set Solver.htm` locally in any browser.
+
+## Download (Desktop App + In-Game Overlay)
 Grab the latest Windows build from **[Releases](https://github.com/Altord/QuanahWorldUtilities/releases)**:
-- `Quanah World Utilities 0.1.1.exe` — Portable single-file `.exe` (no installation required).
-- `Quanah World Utilities Setup 0.1.1.exe` — Windows installer.
+- `Quanah World Utilities 0.1.2.exe` — Portable single-file `.exe` (no installation required).
+- `Quanah World Utilities Setup 0.1.2.exe` — Windows installer.
 
 > **Tip:** Run MapleStory in **Windowed** or **Borderless** mode so the overlay can appear on top of the game.

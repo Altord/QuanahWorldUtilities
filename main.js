@@ -191,7 +191,7 @@ function startOcrWorker() {
         const msg = JSON.parse(line);
         if (msg.ready) { ocrReady = true; continue; }
         const cb = ocrQueue.shift();
-        if (cb) cb(msg.error ? new Error(msg.error) : null, msg.fg !== undefined ? msg.fg : (msg.text || ''));
+        if (cb) cb(msg.error ? new Error(msg.error) : null, msg.fg !== undefined ? msg : (msg.text || ''));
       } catch (e) {}
     }
   });
@@ -211,12 +211,26 @@ function recognizeBMP(bmp) {
   });
 }
 
-function getForegroundName() {
-  if (!ocrProc || !ocrReady) return Promise.resolve('');
+function getForegroundState() {
+  if (!ocrProc || !ocrReady) return Promise.resolve({ fg: '' });
   return new Promise(resolve => {
-    ocrQueue.push((err, fg) => resolve(err ? '' : String(fg || '')));
+    ocrQueue.push((err, res) => resolve(err || !res ? { fg: '' } : res));
     ocrProc.stdin.write('CHECK_FG\n');
   });
+}
+
+let lastKeyAt = { f7: 0, f8: 0, f9: 0 };
+function triggerF7() {
+  const now = Date.now(); if (now - lastKeyAt.f7 < 350) return; lastKeyAt.f7 = now;
+  if (overlay && !overlay.isDestroyed()) overlay.webContents.send('quick-add');
+}
+function triggerF8() {
+  const now = Date.now(); if (now - lastKeyAt.f8 < 350) return; lastKeyAt.f8 = now;
+  scan(false);
+}
+function triggerF9() {
+  const now = Date.now(); if (now - lastKeyAt.f9 < 350) return; lastKeyAt.f9 = now;
+  if (overlay && !overlay.isDestroyed()) overlay.isVisible() ? overlay.hide() : overlay.showInactive();
 }
 
 let scanning = false, autoScan = true;
@@ -224,23 +238,27 @@ let lastPt = null, stillSince = 0, scannedAt = null;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 const hoverTimer = setInterval(() => {
-  if (!autoScan || scanning || !overlay || overlay.isDestroyed() || !overlay.isVisible()) return;
-  const pt = screen.getCursorScreenPoint();
-  const ob = overlay.getBounds();
-  if (pt.x >= ob.x && pt.x <= ob.x + ob.width && pt.y >= ob.y && pt.y <= ob.y + ob.height) {
-    lastPt = pt; stillSince = Date.now(); return; // don't scan while hovering the overlay itself
-  }
-  if (!lastPt || dist(pt, lastPt) > 12) {
-    lastPt = pt; stillSince = Date.now();
-    if (scannedAt && dist(pt, scannedAt) > 28) { scannedAt = null; if (hud && !hud.isDestroyed()) hud.hide(); }
-    return;
-  }
-  if (!scannedAt && Date.now() - stillSince >= 150) {
-    scannedAt = pt;
-    getForegroundName().then(fg => {
-      if (/maplestory/i.test(fg)) scan(false);
-    });
-  }
+  if (scanning || !overlay || overlay.isDestroyed()) return;
+  getForegroundState().then(st => {
+    if (st.f7) triggerF7();
+    if (st.f8) triggerF8();
+    if (st.f9) triggerF9();
+    if (!autoScan || !overlay || overlay.isDestroyed() || !overlay.isVisible()) return;
+    const pt = screen.getCursorScreenPoint();
+    const ob = overlay.getBounds();
+    if (pt.x >= ob.x && pt.x <= ob.x + ob.width && pt.y >= ob.y && pt.y <= ob.y + ob.height) {
+      lastPt = pt; stillSince = Date.now(); return;
+    }
+    if (!lastPt || dist(pt, lastPt) > 12) {
+      lastPt = pt; stillSince = Date.now();
+      if (scannedAt && dist(pt, scannedAt) > 28) { scannedAt = null; if (hud && !hud.isDestroyed()) hud.hide(); }
+      return;
+    }
+    if (!scannedAt && Date.now() - stillSince >= 150 && /maplestory/i.test(st.fg || '')) {
+      scannedAt = pt;
+      scan(false);
+    }
+  });
 }, 60);
 async function scan(fromUI = false) {
   if (scanning || !overlay) return;
@@ -269,12 +287,9 @@ async function scan(fromUI = false) {
 app.whenReady().then(() => {
   startOcrWorker();
   createWindows();
-  const okF8 = globalShortcut.register('F8', () => scan(false));
-  const okAlt = globalShortcut.register('CommandOrControl+Shift+S', () => scan(false));
-  if (!okF8) console.warn('Could not register global shortcut F8');
-  if (!okAlt) console.warn('Could not register global shortcut Ctrl+Shift+S');
-  globalShortcut.register('F7', () => { if (overlay && !overlay.isDestroyed()) overlay.webContents.send('quick-add'); });
-  globalShortcut.register('F9', () => overlay.isVisible() ? overlay.hide() : overlay.showInactive());
+  globalShortcut.register('F7', triggerF7);
+  globalShortcut.register('F8', triggerF8);
+  globalShortcut.register('F9', triggerF9);
   ipcMain.handle('scan', () => scan(true));
   ipcMain.on('set-auto', (_e, on) => { autoScan = !!on; scannedAt = null; });
   ipcMain.on('overlay-resize', (_e, h) => {

@@ -21,6 +21,7 @@ Potential : Unique
 Max HP +10%`;
 let r = parseTooltip(pants);
 assert.strictEqual(r.slot, 2);
+assert.strictEqual(r.job, 'THF');
 assert.deepStrictEqual(r.lines, ['reg', 'wh', 'bd']);
 
 r = parseTooltip(`Libae's Hat\nHat\n[Hologram] Attack Power & Magic ATT Enhancement Skill Lv. +1\n[Hologram] Dimensional Leap Lv. +1\n[Hologram] Mage Skill Lv. +1`);
@@ -62,4 +63,9 @@ assert.deepStrictEqual(r.lines, ['dl', 'crit', 'atk']);
 r = parseTooltip(`3L Solver 17/18\nAuto: ON\nONE DROP FINISHES IT (8)\nDimensional Leap\nWhite Hole`);
 assert.strictEqual(r.slot, null);
 assert.deepStrictEqual(r.lines, []);
+
+// Missing closing paren or clipped "(Thi" / "(Thil" at right edge
+r = parseTooltip(`Libae's Supercharged Top (Thi\nRequired Job`);
+assert.strictEqual(r.slot, 1);
+assert.strictEqual(r.job, 'THF');
 console.log('parse tests passed');

@@ -288,7 +288,14 @@ const EXAMPLE = [
 ];
 let uid = 1;
 const mk = (lines, extra={}) => ({id:uid++, lines, sockets:Array.isArray(extra.sockets)?extra.sockets:null, prismatic:!!extra.prismatic, orb:!!extra.orb});
-let state = {items:SLOTS.map(()=>[]), sockItems:SLOTS.map(()=>[]), active:0, pending:[], pendSock:[], example:false, confirmClear:false, auto:true, build:'meta', focus:'lines', tab:'solver', checks:{}, mainStat:'STR', charClass:'', inspLv:1, scanLog:[], sockScanLog:[], celebrated:{}};
+let state = {items:SLOTS.map(()=>[]), sockItems:SLOTS.map(()=>[]), active:0, pending:[], pendSock:[], example:false, confirmClear:false, auto:true, build:'meta', focus:'lines', tab:'solver', checks:{}, mainStat:'STR', userJob:'WAR', charClass:'', inspLv:1, scanLog:[], sockScanLog:[], celebrated:{}};
+const JOBS = {
+  WAR: {name:'Warrior', stat:'STR', sub:'STR + DEX'},
+  BOW: {name:'Bowman', stat:'DEX', sub:'DEX'},
+  MAG: {name:'Magician', stat:'INT', sub:'INT'},
+  THF: {name:'Thief', stat:'LUK', sub:'LUK'},
+  PIR: {name:'Pirate', stat:'STR', sub:'STR + DEX'}
+};
 const JEWELS = [
   {color:'Red', hex:'#e0484d', atk:'ATT', main:'STR', sec:'DEX'},
   {color:'Green', hex:'#1fa67a', atk:'ATT', main:'DEX', sec:'STR'},
@@ -327,6 +334,7 @@ function load(){
     const raw = JSON.parse(localStorage.getItem(KEY));
     if(raw && raw.checks && typeof raw.checks==='object') state.checks = raw.checks;
     if(raw && raw.mainStat) state.mainStat = raw.mainStat;
+    if(raw && raw.userJob && JOBS[raw.userJob]) state.userJob = raw.userJob;
     if(raw && raw.charClass) state.charClass = raw.charClass;
     if(raw && raw.focus) state.focus = raw.focus;
     if(raw && typeof raw.inspLv==='number') state.inspLv = raw.inspLv;
@@ -357,7 +365,7 @@ function syncItemSocketsToSockItems(){
   });
 }
 function save(){
-  try{ localStorage.setItem(KEY, JSON.stringify({build:state.build, focus:state.focus, mainStat:state.mainStat, charClass:state.charClass, inspLv:state.inspLv, checks:state.checks, celebrated:state.celebrated, scanLog:state.scanLog.slice(-500), sockScanLog:state.sockScanLog.slice(-500), sockItems:state.sockItems.map(a=>a.map(i=>({lines:i.lines}))), items:state.items.map(a=>a.map(i=>({lines:i.lines,sockets:i.sockets||null,prismatic:!!i.prismatic,orb:!!i.orb}))), example:state.example}));
+  try{ localStorage.setItem(KEY, JSON.stringify({build:state.build, focus:state.focus, mainStat:state.mainStat, userJob:state.userJob, charClass:state.charClass, inspLv:state.inspLv, checks:state.checks, celebrated:state.celebrated, scanLog:state.scanLog.slice(-500), sockScanLog:state.sockScanLog.slice(-500), sockItems:state.sockItems.map(a=>a.map(i=>({lines:i.lines}))), items:state.items.map(a=>a.map(i=>({lines:i.lines,sockets:i.sockets||null,prismatic:!!i.prismatic,orb:!!i.orb}))), example:state.example}));
     if(BRIDGE && BRIDGE.notifySync) BRIDGE.notifySync();
   }catch(e){}
 }
@@ -385,8 +393,19 @@ function bestSockPicks(){
     return best;
   });
 }
+function hasDuplicate(sc){
+  if(!sc || sc.slot===null) return false;
+  if(state.focus==='sockets'){
+    if(!sc.sockets || !sc.sockets.length) return false;
+    const sig = sc.sockets.join(',');
+    return state.sockItems[sc.slot].some(it=>it.lines.join(',')===sig);
+  }
+  if(sc.lines.length!==3) return false;
+  const sig = [...sc.lines].sort().join(',');
+  return state.items[sc.slot].some(it=>[...it.lines].sort().join(',')===sig);
+}
 function attachSocketsToExisting(p){
-  if(!p || p.slot===null || p.lines.length!==3 || !p.sockets || !p.sockets.length) return;
+  if(!p || p.slot===null || (p.job && p.job!==state.userJob) || p.lines.length!==3 || !p.sockets || !p.sockets.length) return;
   const sig = [...p.lines].sort().join(',');
   const match = state.items[p.slot].find(it => (!it.sockets || !it.sockets.length) && [...it.lines].sort().join(',')===sig);
   if(!match) return;
@@ -398,7 +417,7 @@ function attachSocketsToExisting(p){
   save();
 }
 function recordScan(p){
-  if(!p || p.slot===null) return;
+  if(!p || p.slot===null || (p.job && p.job!==state.userJob)) return;
   const now = Date.now();
   if(p.lines.length===3){
     const sig = p.slot+':'+[...p.lines].sort().join(',');
@@ -543,9 +562,9 @@ function render(){
   if(state.tab==='jewels'){ document.querySelector('header p').textContent='Jewel colors by main stat and Prismatic socket rules for Lv. 4+ hologram lines.'; return renderJewels(); }
   if(state.tab==='dungeon'){ document.querySelector('header p').textContent='5-room dungeon flow, buffs, fatigue potions, and dungeon vs farming drop tables.'; return renderDungeon(); }
   if(state.tab==='progress'){ document.querySelector('header p').textContent='Inspector inheritance, Mapae module, Inspector badge, starforcing, bossing & known bugs.'; return renderProgress(); }
-  document.querySelector('header p').textContent = state.focus==='sockets'
+  document.querySelector('header p').innerHTML = state.focus==='sockets'
     ? `Socket Focus (${state.mainStat}): hunt Prismatic + ${JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join('/')} sockets for Orb transfers.`
-    : `Build: ${BUILDS[state.build].desc}${BRIDGE?' • F8 scan, F9 toggle overlay (windowed/borderless).':''}`;
+    : `Build: ${BUILDS[state.build].desc}${BRIDGE?' • F8 scan, F9 toggle overlay (windowed/borderless).':' • <a href="https://github.com/Altord/QuanahWorldUtilities/releases" target="_blank" rel="noopener" style="color:var(--accent)">Download Desktop Overlay (.exe)</a>'}`;
   document.getElementById('banner').innerHTML = (state.focus==='lines' && state.example) ? `<div class="banner">
     <span><b>Example gear loaded.</b> These pieces are made up so you can see how it works.</span>
     <button class="ghost" id="clear-example" data-act="clear-now">Clear and start mine</button></div>` : '';
@@ -559,7 +578,7 @@ function render(){
           <button data-act="focus" data-f="sockets" aria-pressed="${state.focus==='sockets'}">Socket Focus</button></div>
       </div>
       <div class="row"><span class="label">Class</span>
-        <div class="seg">${['STR','DEX','LUK','INT'].map(st=>`<button data-act="mstat" data-s="${st}" aria-pressed="${state.mainStat===st}">${st}</button>`).join('')}</div>
+        <div class="seg">${Object.entries(JOBS).map(([k,j])=>`<button data-act="ujob" data-j="${k}" aria-pressed="${state.userJob===k}" title="${j.name} (${j.sub})">${k}</button>`).join('')}</div>
         ${state.charClass?`<span class="muted" style="font-size:12px">(${state.charClass})</span>`:`<span class="muted" style="font-size:12px">Open Char Info once to auto-detect</span>`}
       </div>
     </div>
@@ -734,8 +753,9 @@ const BRIDGE = window.quanah || null;
 if(BRIDGE && BRIDGE.onSync) BRIDGE.onSync(() => { syncFromStorage(); render(); });
 if(BRIDGE && BRIDGE.onQuickAdd) BRIDGE.onQuickAdd(() => {
   const sc = state.scan;
-  if(!sc || sc.slot===null) return;
+  if(!sc || sc.slot===null || (sc.job && sc.job!==state.userJob)) return;
   syncFromStorage();
+  if(hasDuplicate(sc)) return;
   if(state.focus==='sockets'){
     if(sc.sockets && sc.sockets.length===3){ state.sockItems[sc.slot].push(mk(sc.sockets.slice())); state.scan=null; save(); render(); }
   } else if(sc.lines.length===3 && noDupes(sc.lines)){
@@ -748,32 +768,42 @@ function renderHud(){
   const root = document.getElementById('ov-root'), sc = state.scan;
   if(!sc || (!sc.lines.length && sc.slot===null && !sc.sockets)){ root.innerHTML=''; if(BRIDGE) BRIDGE.hideHud(); return; }
   const slot = sc.slot!==null ? SLOTS[sc.slot] : 'Item';
-  if(state.focus==='sockets' && sc.sockets){
-    const se = evalSockets(sc.sockets);
-    const win = se.score===3 && se.hasPrism;
-    const cls = win ? 'win' : se.score>=2 ? 'good' : 'bad';
-    const verdict = win ? `<span class="pill win">★ 3/3 PERFECT SOCKETS ★</span>` : se.score>=2 ? `<span class="pill ok">${se.score}/3 GOOD SOCKETS</span>` : `<span class="pill short">PASS (${se.score}/3 sockets)</span>`;
-    const chips = se.sockets.map((c,i)=>`<span class="chip s-${c} ${se.hits[i]?'need':'wasted'}">${SOCK_LABEL[c]||c}</span>`).join('');
-    root.innerHTML = `<div class="hud ${cls}"><div class="hud-top"><span class="hud-slot">${slot} • ${state.mainStat}</span>${verdict}</div><div class="row">${chips}${sc.slot!==null?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`;
+  if(sc.job && sc.job!==state.userJob){
+    root.innerHTML = `<div class="hud bad"><div class="hud-top"><span class="hud-slot">${slot} • ${sc.job}</span><span class="pill short">WRONG JOB (need ${state.userJob})</span></div></div>`;
     const box = root.firstElementChild;
     if(BRIDGE && box) BRIDGE.showHud(box.offsetWidth + 2, box.offsetHeight + 2);
     return;
   }
-  if(state.focus==='sockets') return renderSocketSolver();
+  if(state.focus==='sockets' && sc.sockets){
+    const dup = hasDuplicate(sc);
+    const se = evalSockets(sc.sockets);
+    const win = !dup && se.score===3 && se.hasPrism;
+    const cls = dup ? '' : win ? 'win' : se.score>=2 ? 'good' : 'bad';
+    const verdict = dup ? `<span class="pill">ALREADY OWNED</span>` : win ? `<span class="pill win">★ 3/3 PERFECT SOCKETS ★</span>` : se.score>=2 ? `<span class="pill ok">${se.score}/3 GOOD SOCKETS</span>` : `<span class="pill short">PASS (${se.score}/3 sockets)</span>`;
+    const chips = se.sockets.map((c,i)=>`<span class="chip s-${c} ${se.hits[i]?'need':'wasted'}">${SOCK_LABEL[c]||c}</span>`).join('');
+    root.innerHTML = `<div class="hud ${cls}"><div class="hud-top"><span class="hud-slot">${slot} • ${state.mainStat}</span>${verdict}</div><div class="row">${chips}${!dup&&sc.slot!==null?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`;
+    const box = root.firstElementChild;
+    if(BRIDGE && box) BRIDGE.showHud(box.offsetWidth + 2, box.offsetHeight + 2);
+    return;
+  }
+  if(state.focus==='sockets'){ root.innerHTML=''; if(BRIDGE) BRIDGE.hideHud(); return; }
   const res = solve(state.items);
   const missing = []; res.counts.forEach((c,i)=>{ for(let j=c;j<T[i];j++) missing.push(STATS[i].k); });
   const ready = sc.slot!==null && sc.lines.length===3;
-  const ev = ready ? evalItem(sc) : null;
+  const dup = ready && hasDuplicate(sc);
+  const ev = ready && !dup ? evalItem(sc) : null;
   const win = ev && ev.gain>0 && ev.after===TOTAL;
   const keep = ev && (ev.gain>0 || ev.outsGain>0);
-  const cls = ev ? (win ? 'win' : keep ? 'good' : 'bad') : '';
-  const verdict = ev
-    ? (ev.gain>0
-        ? (win ? `<span class="pill win">★ FINISHES SET! ${TOTAL}/${TOTAL} ★</span>` : `<span class="pill ok">KEEP +${ev.gain} (${ev.before}→${ev.after}/${TOTAL})</span>`)
-        : ev.outsGain>0
-          ? `<span class="pill ok">KEEP (+${ev.outsGain} out${ev.outsGain===1?'':'s'} → ${ev.outsAfter})</span>`
-          : `<span class="pill short">PASS (no gain)</span>`)
-    : `<span class="muted">${sc.lines.length}/3 lines</span>`;
+  const cls = dup ? '' : ev ? (win ? 'win' : keep ? 'good' : 'bad') : '';
+  const verdict = dup
+    ? `<span class="pill">ALREADY OWNED</span>`
+    : ev
+      ? (ev.gain>0
+          ? (win ? `<span class="pill win">★ FINISHES SET! ${TOTAL}/${TOTAL} ★</span>` : `<span class="pill ok">KEEP +${ev.gain} (${ev.before}→${ev.after}/${TOTAL})</span>`)
+          : ev.outsGain>0
+            ? `<span class="pill ok">KEEP (+${ev.outsGain} out${ev.outsGain===1?'':'s'} → ${ev.outsAfter})</span>`
+            : `<span class="pill short">PASS (no gain)</span>`)
+      : `<span class="muted">${sc.lines.length}/3 lines</span>`;
   const chips = sc.lines.map(k=>{
     const want = ev ? ev.gained.includes(k) : missing.includes(k);
     return chip(k, want ? 'need' : 'wasted');
@@ -782,7 +812,7 @@ function renderHud(){
     const a = (i/8)*Math.PI*2, r = 56 + (i%2)*20;
     return `<span class="spark" style="background:${c};--dx:${Math.round(Math.cos(a)*r)}px;--dy:${Math.round(Math.sin(a)*r)}px;animation-delay:${(i*0.1).toFixed(2)}s"></span>`;
   }).join('') : '';
-  root.innerHTML = `<div class="hud ${cls}">${sparks}<div class="hud-top"><span class="hud-slot">${slot}</span>${verdict}</div><div class="row">${chips}${ready?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`;
+  root.innerHTML = `<div class="hud ${cls}">${sparks}<div class="hud-top"><span class="hud-slot">${slot}</span>${verdict}</div><div class="row">${chips}${ready&&!dup?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`;
   const box = root.firstElementChild;
   if(BRIDGE && box) BRIDGE.showHud(box.offsetWidth + 2, box.offsetHeight + 2);
 }
@@ -803,18 +833,24 @@ function renderOverlay(){
   else if(state.scanError) card = `<div class="ov-note warn">${state.scanError}</div>`;
   else if(!sc) card = `<div class="ov-note">Hover an item in game and press <b>F8</b> (or Scan).</div>`;
   if(sc){
-    if(state.focus==='sockets'){
+    const wrongJob = sc.job && sc.job!==state.userJob;
+    if(wrongJob){
+      card = `<div class="ov-card">
+        <div class="verdict no">Wrong job: ${JOBS[sc.job].name} gear (you are ${JOBS[state.userJob].name}). Ignored.</div>
+        <div class="row"><button class="btn-dim" id="ov-dismiss" data-act="ov-dismiss">Dismiss</button></div></div>`;
+    } else if(state.focus==='sockets'){
+      const dup = hasDuplicate(sc);
       const se = sc.sockets ? evalSockets(sc.sockets) : null;
-      const win = se && se.score===3 && se.hasPrism;
+      const win = !dup && se && se.score===3 && se.hasPrism;
       card = `<div class="ov-card">
         <div class="mini-tabs">${SLOTS.map((s,i)=>`<button id="ov-slot-${i}" data-act="ov-slot" data-i="${i}" aria-pressed="${sc.slot===i}">${s}</button>`).join('')}</div>
         ${se ? `<div class="row">${se.sockets.map((c,i)=>sockChip(c,se.hits[i]?'need':'wasted')).join('')}</div>
-          <div class="verdict ${win||se.score>=2?'yes':'no'}">${win?'★ 3/3 PERFECT SOCKETS ★':se.score>=2?`${se.score}/3 GOOD SOCKETS (${state.mainStat})`:`PASS (${se.score}/3 matching sockets)`}</div>`
+          <div class="verdict ${dup?'':win||se.score>=2?'yes':'no'}">${dup?'Already in your socket gear.':win?'★ 3/3 PERFECT SOCKETS ★':se.score>=2?`${se.score}/3 GOOD SOCKETS (${state.mainStat})`:`PASS (${se.score}/3 matching sockets)`}</div>`
           : `<div class="ov-note warn">No jewel sockets detected on this item.</div>`}
-        <div class="row">${sc.sockets&&sc.slot!==null?`<button class="btn-add" data-act="ov-add-sock">Add sockets (F7)</button>`:''}
+        <div class="row">${sc.sockets&&sc.slot!==null?`<button class="btn-add" data-act="ov-add-sock" ${dup?'disabled':''}>Add sockets (F7)</button>`:''}
           <button class="btn-dim" id="ov-dismiss" data-act="ov-dismiss">Dismiss</button></div></div>`;
     } else {
-      const ready = sc.slot!==null && sc.lines.length===3, ev = ready ? evalItem(sc) : null;
+      const ready = sc.slot!==null && sc.lines.length===3, dup = ready && hasDuplicate(sc), ev = ready && !dup ? evalItem(sc) : null;
       const slotName = sc.slot===null ? 'item' : SLOTS[sc.slot].toLowerCase();
       card = `<div class="ov-card">
         <div class="mini-tabs">${SLOTS.map((s,i)=>`<button id="ov-slot-${i}" data-act="ov-slot" data-i="${i}" aria-pressed="${sc.slot===i}">${s}</button>`).join('')}</div>
@@ -822,13 +858,13 @@ function renderOverlay(){
           ${sc.lines.length?`<button class="ghost" id="ov-undo" data-act="ov-undo">Undo</button>`:''}</div>
         ${sc.lines.length<3?`<div class="ov-note warn">Read ${sc.lines.length} of 3 lines${sc.slot===null?' and no slot':''}. Fix it below.</div>
           <div class="row">${GROUPS.flat().map(k=>`<button class="chip s-${k} ${ICON[k]?'has-icon':''}" data-act="ov-line" data-k="${k}" ${k!=='other'&&sc.lines.includes(k)?'disabled':''}>${ICON[k]||''}${NAME[k]}</button>`).join('')}</div>`:''}
-        ${ev ? (ev.gain>0
+        ${dup ? `<div class="ov-note">Already in your ${slotName} gear.</div>` : ev ? (ev.gain>0
           ? `<div class="verdict yes">Keep it: ${ev.before} to ${ev.after} of ${TOTAL}${ev.after===TOTAL?' (set complete!)':''}${ev.outsGain>0?` (+${ev.outsGain} 1-drop outs)`:''}</div><div class="row">${ev.gained.map(k=>chip(k)).join('')}</div>`
           : ev.outsGain>0
             ? `<div class="verdict yes">Keep it: opens +${ev.outsGain} more 1-drop finish${ev.outsGain===1?'':'es'} (${ev.outsBefore}→${ev.outsAfter})</div>`
             : `<div class="verdict no">No gain for ${slotName}. Leave it.</div>`) : ''}
         ${sc.sockets?(()=>{ const se=evalSockets(sc.sockets); return `<div class="row"><span class="muted" style="font-size:11.5px">Sockets:</span>${se.sockets.map((c,i)=>sockIcon(c,se.hits[i]?'need':'wasted')).join('')}</div>`; })():''}
-        <div class="row"><button class="btn-add" id="ov-add" data-act="ov-add" ${ready?'':'disabled'}>Add to my gear (F7)</button>
+        <div class="row"><button class="btn-add" id="ov-add" data-act="ov-add" ${ready&&!dup?'':'disabled'}>Add to my gear (F7)</button>
           <button class="btn-dim" id="ov-dismiss" data-act="ov-dismiss">Dismiss</button></div></div>`;
     }
   }
@@ -864,15 +900,22 @@ function renderOverlay(){
     <div class="row spread"><div class="row" style="gap:5px">${BRIDGE?`<button class="ghost" id="ov-main" data-act="ov-main">Full UI</button><button class="ghost" id="ov-gear" data-act="ov-gear" aria-pressed="${!!state.gearOpen}">Gear (${totalGear})</button>`:''}</div>
       <div class="seg"><button data-act="focus" data-f="lines" aria-pressed="${state.focus==='lines'}">3L Lines</button><button data-act="focus" data-f="sockets" aria-pressed="${state.focus==='sockets'}">Sockets</button></div></div>
     ${sockMode?'':`<div class="row spread"><span class="muted" style="font-size:11.5px">Build</span><div class="seg">${Object.entries(BUILDS).map(([k,b])=>`<button data-act="build" data-b="${k}" aria-pressed="${state.build===k}">${b.name}</button>`).join('')}</div></div>`}
-    <div class="row spread"><span class="muted" style="font-size:11.5px">Jewel (${state.mainStat}): <b>${JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join(' / ')}</b></span><div class="seg">${['STR','DEX','LUK','INT'].map(st=>`<button data-act="mstat" data-s="${st}" aria-pressed="${state.mainStat===st}">${st}</button>`).join('')}</div></div>
+    <div class="row spread"><span class="muted" style="font-size:11.5px">Class (${state.mainStat})</span><div class="seg">${Object.entries(JOBS).map(([k,j])=>`<button data-act="ujob" data-j="${k}" aria-pressed="${state.userJob===k}">${k}</button>`).join('')}</div></div>
     ${state.example?`<div class="ov-note warn">Showing example gear. Clear it in the main window.</div>`:''}
     ${card}${hunt}${gearDrawer}${done?`<div class="verdict yes">Set complete!</div>`:''}</div>`;
-  if(BRIDGE) BRIDGE.resize(document.querySelector('.ov').scrollHeight + 4);
+  if(BRIDGE) requestAnimationFrame(()=>{
+    const el = document.querySelector('.ov');
+    if(el) BRIDGE.resize(el.scrollHeight + 12);
+  });
+}
+if(OV && BRIDGE && document.fonts && document.fonts.ready){
+  document.fonts.ready.then(()=>{ const el=document.querySelector('.ov'); if(el) BRIDGE.resize(el.scrollHeight + 12); });
 }
 function syncFromStorage(){
   try{ const raw = JSON.parse(localStorage.getItem(KEY));
     if(raw && raw.checks && typeof raw.checks==='object') state.checks = raw.checks;
     if(raw && raw.mainStat) state.mainStat = raw.mainStat;
+    if(raw && raw.userJob && JOBS[raw.userJob]) state.userJob = raw.userJob;
     if(raw && raw.charClass) state.charClass = raw.charClass;
     if(raw && raw.focus) state.focus = raw.focus;
     if(raw && typeof raw.inspLv==='number') state.inspLv = raw.inspLv;
@@ -897,7 +940,7 @@ if(BRIDGE) BRIDGE.onScan(msg=>{
   else { state.scanStatus=''; state.scanError='';
     if(!state.charClass){
       const cc = QParse.detectCharClass(msg.text);
-      if(cc){ state.charClass = cc.className; state.mainStat = cc.mainStat; save(); }
+      if(cc){ state.charClass = cc.className; state.mainStat = cc.mainStat; state.userJob = cc.job; save(); }
     }
     const p = QParse.parseTooltip(msg.text);
     if(msg.sockets) p.sockets = msg.sockets;
@@ -933,6 +976,7 @@ document.addEventListener('click', e=>{
   else if(act==='sock-scan-reset'){ state.sockScanLog = []; }
   else if(act==='insp'){ state.inspLv = Math.max(1, Math.min(200, (state.inspLv||1) + (+b.dataset.d))); }
   else if(act==='mstat'){ state.mainStat = b.dataset.s; }
+  else if(act==='ujob'){ state.userJob = b.dataset.j; state.mainStat = JOBS[state.userJob].stat; }
   else if(act==='chk'){ state.checks[b.dataset.k] = b.checked; }
   else if(act==='chk-reset'){ state.checks = {}; }
   else if(act==='ov-main'){ BRIDGE.showMain(); return; }
