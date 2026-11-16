@@ -20,6 +20,7 @@ public class FgWin {
   [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
 }'
 [Console]::OutputEncoding = [Text.Encoding]::UTF8
+$null = [FgWin]::GetAsyncKeyState(0x76); $null = [FgWin]::GetAsyncKeyState(0x77); $null = [FgWin]::GetAsyncKeyState(0x78)
 Write-Output '{"ready":true}'
 
 while (($line = [Console]::In.ReadLine()) -ne $null) {
@@ -31,9 +32,9 @@ while (($line = [Console]::In.ReadLine()) -ne $null) {
       $h = [FgWin]::GetForegroundWindow()
       [FgWin]::GetWindowThreadProcessId($h, [ref]$procId) | Out-Null
       $name = (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName
-      $f7 = (([FgWin]::GetAsyncKeyState(0x76) -band 0x8000) -ne 0)
-      $f8 = (([FgWin]::GetAsyncKeyState(0x77) -band 0x8000) -ne 0)
-      $f9 = (([FgWin]::GetAsyncKeyState(0x78) -band 0x8000) -ne 0)
+      $f7 = (([FgWin]::GetAsyncKeyState(0x76) -band 0x8001) -ne 0)
+      $f8 = (([FgWin]::GetAsyncKeyState(0x77) -band 0x8001) -ne 0)
+      $f9 = (([FgWin]::GetAsyncKeyState(0x78) -band 0x8001) -ne 0)
       Write-Output (@{ fg = "$name"; f7 = $f7; f8 = $f8; f9 = $f9 } | ConvertTo-Json -Compress)
     } catch { Write-Output '{"fg":""}' }
     continue

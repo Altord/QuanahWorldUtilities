@@ -222,7 +222,9 @@ function getForegroundState() {
 let lastKeyAt = { f7: 0, f8: 0, f9: 0 };
 function triggerF7() {
   const now = Date.now(); if (now - lastKeyAt.f7 < 350) return; lastKeyAt.f7 = now;
+  console.log('KEY: F7');
   if (overlay && !overlay.isDestroyed()) overlay.webContents.send('quick-add');
+  if (hud && !hud.isDestroyed()) hud.hide();
 }
 function triggerF8() {
   const now = Date.now(); if (now - lastKeyAt.f8 < 350) return; lastKeyAt.f8 = now;
@@ -251,7 +253,7 @@ const hoverTimer = setInterval(() => {
     }
     if (!lastPt || dist(pt, lastPt) > 12) {
       lastPt = pt; stillSince = Date.now();
-      if (scannedAt && dist(pt, scannedAt) > 28) { scannedAt = null; if (hud && !hud.isDestroyed()) hud.hide(); }
+      if (scannedAt && dist(pt, scannedAt) > 38) { scannedAt = null; if (hud && !hud.isDestroyed()) hud.hide(); }
       return;
     }
     if (!scannedAt && Date.now() - stillSince >= 150 && /maplestory/i.test(st.fg || '')) {
@@ -305,8 +307,12 @@ app.whenReady().then(() => {
     const W = Math.min(Math.max(Math.ceil(w), 180), 380), H = Math.min(Math.ceil(h), 240);
     const x = Math.min(d.x + d.width - W - 8, Math.max(d.x + 8, scannedAt.x + 18));
     const y = Math.max(d.y + 8, scannedAt.y - H - 14);
-    hud.setBounds({ x: Math.round(x), y: Math.round(y), width: W, height: H });
-    hud.showInactive();
+    const nx = Math.round(x), ny = Math.round(y);
+    const cur = hud.getBounds();
+    if (cur.x !== nx || cur.y !== ny || cur.width !== W || cur.height !== H) {
+      hud.setBounds({ x: nx, y: ny, width: W, height: H });
+    }
+    if (!hud.isVisible()) hud.showInactive();
   });
   ipcMain.on('hud-hide', () => hud && hud.hide());
   ipcMain.on('overlay-hide', () => { if (overlay) overlay.hide(); if (hud) hud.hide(); });

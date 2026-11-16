@@ -159,6 +159,8 @@ body.ov-mode{background:transparent;padding:0;overflow:hidden}
 .ov .ghost[aria-pressed="true"]{border-color:var(--good);color:var(--good);background:color-mix(in oklab,var(--good) 14%,var(--surface))}
 .ov .chip{font-size:12px;padding:2px 7px} .ov button.chip{padding:5px 9px;font-size:12px}
 .ov-note{color:var(--muted)} .ov-note.warn{color:var(--warn)}
+.aa-tip{background:var(--sunk);border:1px solid var(--line);border-radius:7px;padding:5px 8px;font-size:11.5px;color:var(--muted);line-height:1.35}
+.aa-tip b{color:var(--fg)} .aa-tip.hover{border-color:var(--accent)}
 .ov-card{border:1px solid var(--line);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:8px;background:var(--sunk)}
 .verdict{font-weight:700;font-family:var(--display)}
 .verdict.yes{color:var(--good)} .verdict.no{color:var(--warn)}
@@ -337,6 +339,7 @@ function load(){
     if(raw && raw.userJob && JOBS[raw.userJob]) state.userJob = raw.userJob;
     if(raw && raw.charClass) state.charClass = raw.charClass;
     if(raw && raw.focus) state.focus = raw.focus;
+    if(raw && raw.autoAdd) state.autoAdd = raw.autoAdd;
     if(raw && typeof raw.inspLv==='number') state.inspLv = raw.inspLv;
     if(raw && Array.isArray(raw.scanLog)) state.scanLog = raw.scanLog;
     if(raw && Array.isArray(raw.sockScanLog)) state.sockScanLog = raw.sockScanLog;
@@ -365,7 +368,7 @@ function syncItemSocketsToSockItems(){
   });
 }
 function save(){
-  try{ localStorage.setItem(KEY, JSON.stringify({build:state.build, focus:state.focus, mainStat:state.mainStat, userJob:state.userJob, charClass:state.charClass, inspLv:state.inspLv, checks:state.checks, celebrated:state.celebrated, scanLog:state.scanLog.slice(-500), sockScanLog:state.sockScanLog.slice(-500), sockItems:state.sockItems.map(a=>a.map(i=>({lines:i.lines}))), items:state.items.map(a=>a.map(i=>({lines:i.lines,sockets:i.sockets||null,prismatic:!!i.prismatic,orb:!!i.orb}))), example:state.example}));
+  try{ localStorage.setItem(KEY, JSON.stringify({build:state.build, focus:state.focus, autoAdd:state.autoAdd||'off', mainStat:state.mainStat, userJob:state.userJob, charClass:state.charClass, inspLv:state.inspLv, checks:state.checks, celebrated:state.celebrated, scanLog:state.scanLog.slice(-500), sockScanLog:state.sockScanLog.slice(-500), sockItems:state.sockItems.map(a=>a.map(i=>({lines:i.lines}))), items:state.items.map(a=>a.map(i=>({lines:i.lines,sockets:i.sockets||null,prismatic:!!i.prismatic,orb:!!i.orb}))), example:state.example}));
     if(BRIDGE && BRIDGE.notifySync) BRIDGE.notifySync();
   }catch(e){}
 }
@@ -581,8 +584,9 @@ function render(){
         <div class="seg">${Object.entries(JOBS).map(([k,j])=>`<button data-act="ujob" data-j="${k}" aria-pressed="${state.userJob===k}" title="${j.name} (${j.sub})">${k}</button>`).join('')}</div>
         ${state.charClass?`<span class="muted" style="font-size:12px">(${state.charClass})</span>`:`<span class="muted" style="font-size:12px">Open Char Info once to auto-detect</span>`}
       </div>
+      ${BRIDGE?`<div class="row"><span class="label">Auto-Add</span>${autoAddSeg()}</div>`:''}
     </div>
-    <div class="note-box"><b>Why choose each build?</b> <b>Meta Registry</b> maxes Registry + 5 class procs for all-around damage. <b>No-Class Crit</b> swaps the 5 class skills for 3× Crit DMG (some classes lose damage with Registry procs). <b>Boss (No-WH)</b> swaps White Hole for 3× Boss DMG when focusing purely on bosses. Use <b>Socket Focus</b> after finishing 3L to hunt Prismatic + ${JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join('/')} sockets for Orb transfers.</div>`;
+    <div class="note-box"><b>Why choose each build?</b> <b>Meta Registry</b> maxes Registry + 5 class procs for all-around damage. <b>No-Class Crit</b> swaps the 5 class skills for 3× Crit DMG (some classes lose damage with Registry procs). <b>Boss (No-WH)</b> swaps White Hole for 3× Boss DMG when focusing purely on bosses. Use <b>Socket Focus</b> after finishing 3L to hunt Prismatic + ${JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join('/')} sockets for Orb transfers.${BRIDGE?`<br><b>Auto-Add:</b> <b>Off</b> = manual Add/F7 · <b>Any</b> = all class gear (early starter) · <b>3/3 Build</b> = fastest for 18/18 (banks all clean 3L pieces for combos) · <b>+Gain/Outs</b> = immediate score/out upgrades · <b>3/3+Gain</b> = best near 18/18 (clean 3L + immediate gain).`:''}</div>`;
   if(state.focus==='sockets') return renderSocketSolver();
   const res = solve(state.items);
   const doneNow = res.best===TOTAL;
@@ -751,27 +755,69 @@ const OV = new URLSearchParams(location.search).has('overlay');
 const HUD = new URLSearchParams(location.search).has('hud');
 const BRIDGE = window.quanah || null;
 if(BRIDGE && BRIDGE.onSync) BRIDGE.onSync(() => { syncFromStorage(); render(); });
-if(BRIDGE && BRIDGE.onQuickAdd) BRIDGE.onQuickAdd(() => {
-  const sc = state.scan;
-  if(!sc || sc.slot===null || (sc.job && sc.job!==state.userJob)) return;
-  syncFromStorage();
-  if(hasDuplicate(sc)) return;
+const AUTO_ADD_LABEL = { off: 'Off', any: 'Any', '3need': '3/3 Build', gain: '+Gain/Outs', both: '3/3+Gain' };
+const AUTO_ADD_DESC = {
+  off: 'Preview only — click Add (or press F7) to save.',
+  any: 'Adds all class gear (even with Other lines). Best early on.',
+  '3need': 'Fastest for 18/18 — banks all clean 3L pieces (no Other lines) for future combos.',
+  gain: 'Saves any item that raises your score or 1-drop outs (can include 1 Other line).',
+  both: 'Best near 18/18 — clean 3L pieces that raise score/outs now.'
+};
+const autoAddSeg = () => {
+  const aa = state.autoAdd || 'off';
+  return `<div class="seg">${Object.entries(AUTO_ADD_LABEL).map(([m,lbl])=>`<button data-act="autoadd" data-m="${m}" aria-pressed="${aa===m}">${lbl}</button>`).join('')}</div>`;
+};
+function shouldAutoAdd(sc, mode){
+  if(!mode || mode==='any') return true;
+  if(mode==='both') return shouldAutoAdd(sc, '3need') && shouldAutoAdd(sc, 'gain');
   if(state.focus==='sockets'){
-    if(sc.sockets && sc.sockets.length===3){ state.sockItems[sc.slot].push(mk(sc.sockets.slice())); state.scan=null; save(); render(); }
+    const se = sc.sockets && sc.sockets.length===3 ? evalSockets(sc.sockets) : null;
+    if(!se) return false;
+    if(mode==='3need') return se.score===3;
+    if(mode==='gain'){
+      const cur = bestSockPicks()[sc.slot];
+      const curEv = cur ? evalSockets(cur.lines) : null;
+      return !curEv || se.score>curEv.score || (se.score===curEv.score && se.hasPrism && !curEv.hasPrism);
+    }
+    return false;
+  }
+  if(sc.lines.length!==3 || !noDupes(sc.lines)) return false;
+  if(mode==='3need') return sc.lines.every(k => IDX[k]!==undefined && T[IDX[k]]>0);
+  if(mode==='gain'){ const ev = evalItem(sc); return ev.gain>0 || ev.outsGain>0; }
+  return false;
+}
+function tryAddScanned(sc, mode='any'){
+  if(!sc || sc.slot===null || (sc.job && sc.job!==state.userJob)) return false;
+  syncFromStorage();
+  if(hasDuplicate(sc)) return false;
+  if(!shouldAutoAdd(sc, mode)) return false;
+  if(state.focus==='sockets'){
+    if(sc.sockets && sc.sockets.length===3){ state.sockItems[sc.slot].push(mk(sc.sockets.slice())); return true; }
   } else if(sc.lines.length===3 && noDupes(sc.lines)){
     state.items[sc.slot].push(mk(sc.lines.slice(), {sockets:sc.sockets, prismatic:sc.prismatic}));
     if(sc.sockets && sc.sockets.length===3) state.sockItems[sc.slot].push(mk(sc.sockets.slice()));
-    state.example=false; state.scan=null; save(); render();
+    state.example=false; return true;
   }
+  return false;
+}
+if(BRIDGE && BRIDGE.onQuickAdd) BRIDGE.onQuickAdd(() => {
+  if(tryAddScanned(state.scan)){ state.scan=null; save(); render(); }
 });
+let lastHudHtml = '';
+function paintHud(root, html){
+  if(!html){ if(lastHudHtml){ lastHudHtml=''; root.innerHTML=''; } if(BRIDGE) BRIDGE.hideHud(); return; }
+  if(html === lastHudHtml) return;
+  lastHudHtml = html;
+  root.innerHTML = html;
+  const box = root.firstElementChild;
+  if(BRIDGE && box) requestAnimationFrame(() => BRIDGE.showHud(box.offsetWidth + 2, box.offsetHeight + 2));
+}
 function renderHud(){
   const root = document.getElementById('ov-root'), sc = state.scan;
-  if(!sc || (!sc.lines.length && sc.slot===null && !sc.sockets)){ root.innerHTML=''; if(BRIDGE) BRIDGE.hideHud(); return; }
+  if(!sc || (!sc.lines.length && sc.slot===null && !sc.sockets)){ paintHud(root, ''); return; }
   const slot = sc.slot!==null ? SLOTS[sc.slot] : 'Item';
   if(sc.job && sc.job!==state.userJob){
-    root.innerHTML = `<div class="hud bad"><div class="hud-top"><span class="hud-slot">${slot} • ${sc.job}</span><span class="pill short">WRONG JOB (need ${state.userJob})</span></div></div>`;
-    const box = root.firstElementChild;
-    if(BRIDGE && box) BRIDGE.showHud(box.offsetWidth + 2, box.offsetHeight + 2);
+    paintHud(root, `<div class="hud bad"><div class="hud-top"><span class="hud-slot">${slot} • ${sc.job}</span><span class="pill short">WRONG JOB (need ${state.userJob})</span></div></div>`);
     return;
   }
   if(state.focus==='sockets' && sc.sockets){
@@ -781,12 +827,10 @@ function renderHud(){
     const cls = dup ? '' : win ? 'win' : se.score>=2 ? 'good' : 'bad';
     const verdict = dup ? `<span class="pill">ALREADY OWNED</span>` : win ? `<span class="pill win">★ 3/3 PERFECT SOCKETS ★</span>` : se.score>=2 ? `<span class="pill ok">${se.score}/3 GOOD SOCKETS</span>` : `<span class="pill short">PASS (${se.score}/3 sockets)</span>`;
     const chips = se.sockets.map((c,i)=>`<span class="chip s-${c} ${se.hits[i]?'need':'wasted'}">${SOCK_LABEL[c]||c}</span>`).join('');
-    root.innerHTML = `<div class="hud ${cls}"><div class="hud-top"><span class="hud-slot">${slot} • ${state.mainStat}</span>${verdict}</div><div class="row">${chips}${!dup&&sc.slot!==null?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`;
-    const box = root.firstElementChild;
-    if(BRIDGE && box) BRIDGE.showHud(box.offsetWidth + 2, box.offsetHeight + 2);
+    paintHud(root, `<div class="hud ${cls}"><div class="hud-top"><span class="hud-slot">${slot} • ${state.mainStat}</span>${verdict}</div><div class="row">${chips}${!dup&&sc.slot!==null?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`);
     return;
   }
-  if(state.focus==='sockets'){ root.innerHTML=''; if(BRIDGE) BRIDGE.hideHud(); return; }
+  if(state.focus==='sockets'){ paintHud(root, ''); return; }
   const res = solve(state.items);
   const missing = []; res.counts.forEach((c,i)=>{ for(let j=c;j<T[i];j++) missing.push(STATS[i].k); });
   const ready = sc.slot!==null && sc.lines.length===3;
@@ -812,9 +856,7 @@ function renderHud(){
     const a = (i/8)*Math.PI*2, r = 56 + (i%2)*20;
     return `<span class="spark" style="background:${c};--dx:${Math.round(Math.cos(a)*r)}px;--dy:${Math.round(Math.sin(a)*r)}px;animation-delay:${(i*0.1).toFixed(2)}s"></span>`;
   }).join('') : '';
-  root.innerHTML = `<div class="hud ${cls}">${sparks}<div class="hud-top"><span class="hud-slot">${slot}</span>${verdict}</div><div class="row">${chips}${ready&&!dup?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`;
-  const box = root.firstElementChild;
-  if(BRIDGE && box) BRIDGE.showHud(box.offsetWidth + 2, box.offsetHeight + 2);
+  paintHud(root, `<div class="hud ${cls}">${sparks}<div class="hud-top"><span class="hud-slot">${slot}</span>${verdict}</div><div class="row">${chips}${ready&&!dup?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`);
 }
 function evalItem(sc){
   const base = solve(state.items);
@@ -901,6 +943,7 @@ function renderOverlay(){
       <div class="seg"><button data-act="focus" data-f="lines" aria-pressed="${state.focus==='lines'}">3L Lines</button><button data-act="focus" data-f="sockets" aria-pressed="${state.focus==='sockets'}">Sockets</button></div></div>
     ${sockMode?'':`<div class="row spread"><span class="muted" style="font-size:11.5px">Build</span><div class="seg">${Object.entries(BUILDS).map(([k,b])=>`<button data-act="build" data-b="${k}" aria-pressed="${state.build===k}">${b.name}</button>`).join('')}</div></div>`}
     <div class="row spread"><span class="muted" style="font-size:11.5px">Class (${state.mainStat})</span><div class="seg">${Object.entries(JOBS).map(([k,j])=>`<button data-act="ujob" data-j="${k}" aria-pressed="${state.userJob===k}">${k}</button>`).join('')}</div></div>
+    ${BRIDGE?(()=>{ const aa=state.autoAdd||'off'; return `<div class="row spread"><span class="muted" style="font-size:11.5px">Auto-Add</span>${autoAddSeg()}</div><div class="aa-tip" id="aa-tip"><b>${AUTO_ADD_LABEL[aa]}:</b> ${AUTO_ADD_DESC[aa]}</div>`; })():''}
     ${state.example?`<div class="ov-note warn">Showing example gear. Clear it in the main window.</div>`:''}
     ${card}${hunt}${gearDrawer}${done?`<div class="verdict yes">Set complete!</div>`:''}</div>`;
   if(BRIDGE) requestAnimationFrame(()=>{
@@ -918,6 +961,7 @@ function syncFromStorage(){
     if(raw && raw.userJob && JOBS[raw.userJob]) state.userJob = raw.userJob;
     if(raw && raw.charClass) state.charClass = raw.charClass;
     if(raw && raw.focus) state.focus = raw.focus;
+    if(raw && raw.autoAdd) state.autoAdd = raw.autoAdd;
     if(raw && typeof raw.inspLv==='number') state.inspLv = raw.inspLv;
     if(raw && Array.isArray(raw.scanLog)) state.scanLog = raw.scanLog;
     if(raw && Array.isArray(raw.sockScanLog)) state.sockScanLog = raw.sockScanLog;
@@ -945,7 +989,7 @@ if(BRIDGE) BRIDGE.onScan(msg=>{
     const p = QParse.parseTooltip(msg.text);
     if(msg.sockets) p.sockets = msg.sockets;
     if(msg.sockets && msg.sockets.includes('prismatic')) p.prismatic = true;
-    if(p.lines.length || p.slot!==null || p.sockets){ state.scan = p; if(OV){ attachSocketsToExisting(p); recordScan(p); } }
+    if(p.lines.length || p.slot!==null || p.sockets){ lastHudHtml = ''; state.scan = p; if(OV){ attachSocketsToExisting(p); recordScan(p); if(state.autoAdd && state.autoAdd!=='off' && tryAddScanned(p, state.autoAdd)){ state.scan = null; save(); } } }
     else if(msg.manual){ state.scan = null; state.scanError = 'No hologram tooltip found near the cursor. Hover the item and try again.'; }
     else return; }
   state.huntOpen = false; render();
@@ -984,6 +1028,7 @@ document.addEventListener('click', e=>{
   else if(act==='ov-scan'){ BRIDGE.scan(); return; }
   else if(act==='ov-gear'){ state.gearOpen = !state.gearOpen; }
   else if(act==='ov-auto'){ state.auto = !state.auto; BRIDGE.setAuto(state.auto); }
+  else if(act==='autoadd'){ state.autoAdd = b.dataset.m; }
   else if(act==='ov-close'){ BRIDGE.hideOverlay(); return; }
   else if(act==='ov-slot'){ state.scan.slot = +b.dataset.i; state.huntOpen = false; }
   else if(act==='ov-line'){ if(state.scan.lines.length<3) state.scan.lines.push(b.dataset.k); }
@@ -1014,6 +1059,14 @@ document.addEventListener('click', e=>{
   save(); render();
   const id = b.id; if(id){ const again=document.getElementById(id); if(again) again.focus({preventScroll:true}); }
 });
+const setAaTip = (m, hover) => {
+  const el = document.getElementById('aa-tip'); if(!el) return;
+  const k = m || state.autoAdd || 'off';
+  el.innerHTML = `<b>${AUTO_ADD_LABEL[k]}:</b> ${AUTO_ADD_DESC[k]}`;
+  el.classList.toggle('hover', !!hover);
+};
+document.addEventListener('mouseover', e=>{ const b=e.target.closest('[data-act="autoadd"]'); if(b) setAaTip(b.dataset.m, true); });
+document.addEventListener('mouseout', e=>{ const b=e.target.closest('[data-act="autoadd"]'); if(b && !b.contains(e.relatedTarget)) setAaTip(null, false); });
 
 if(OV || HUD){ document.body.classList.add('ov-mode'); document.documentElement.dataset.theme='dark'; document.body.innerHTML='<div id="ov-root"></div>'; }
 else if(BRIDGE){ document.querySelector('header p').insertAdjacentHTML('afterend','<p>Overlay: hover an item in MapleStory and press <b>F8</b> to read it. <b>F9</b> shows or hides the overlay. Run the game in windowed or borderless mode.</p>'); }
