@@ -106,6 +106,7 @@ button.chip:not(:disabled):hover{background:color-mix(in oklab,var(--c) 30%,var(
 .pill{font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px}
 .pill.ok{background:color-mix(in oklab,var(--good) 18%,var(--surface));color:var(--good)}
 .pill.short{background:color-mix(in oklab,var(--warn) 18%,var(--surface));color:var(--warn)}
+.pill.owned{background:color-mix(in oklab,var(--c-wh) 18%,var(--surface));color:var(--c-wh)}
 
 .reqs{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px}
 .req{display:flex;justify-content:space-between;align-items:center;gap:8px}
@@ -171,7 +172,7 @@ body.ov-mode{background:transparent;padding:0;overflow:hidden}
 .ov .hunt .opt b{width:54px}
 /* Cursor HUD (?hud=1): compact click-through badge next to the hovered item */
 .hud{display:inline-flex;flex-direction:column;gap:6px;background:rgba(20,26,38,.96);border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;box-shadow:0 6px 22px rgba(0,0,0,.55);font-size:12.5px;max-width:360px}
-.hud.good{border-color:var(--good)} .hud.bad{border-color:var(--warn)}
+.hud.good{border-color:var(--good)} .hud.bad{border-color:var(--warn)} .hud.owned{border-color:var(--c-wh)}
 .hud.win{position:relative;border:2px solid transparent;background:linear-gradient(rgba(20,26,38,.96),rgba(20,26,38,.96)) padding-box,linear-gradient(90deg,#ff8a4c,#f0a92b,#4cc38a,#2f9bd6,#7a5cf0,#d6409f,#ff8a4c) border-box;background-size:100% 100%,200% 100%;animation:hudRainbow 1.4s linear infinite,hudPulse .9s ease-in-out infinite alternate;box-shadow:0 0 18px rgba(76,195,138,.55),0 0 34px rgba(122,92,240,.4)}
 .pill.win{background:linear-gradient(90deg,#ff8a4c,#f0a92b,#4cc38a,#2f9bd6,#7a5cf0,#d6409f);background-size:200% 100%;animation:hudRainbow 1.4s linear infinite;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5);font-weight:700}
 .spark{position:absolute;width:6px;height:6px;border-radius:50%;pointer-events:none;left:50%;top:50%;animation:sparkOut .95s ease-out infinite}
@@ -340,6 +341,7 @@ function load(){
     if(raw && raw.charClass) state.charClass = raw.charClass;
     if(raw && raw.focus) state.focus = raw.focus;
     if(raw && raw.autoAdd) state.autoAdd = raw.autoAdd;
+    if(raw && raw.lastAdded) state.lastAdded = raw.lastAdded;
     if(raw && typeof raw.inspLv==='number') state.inspLv = raw.inspLv;
     if(raw && Array.isArray(raw.scanLog)) state.scanLog = raw.scanLog;
     if(raw && Array.isArray(raw.sockScanLog)) state.sockScanLog = raw.sockScanLog;
@@ -368,7 +370,7 @@ function syncItemSocketsToSockItems(){
   });
 }
 function save(){
-  try{ localStorage.setItem(KEY, JSON.stringify({build:state.build, focus:state.focus, autoAdd:state.autoAdd||'off', mainStat:state.mainStat, userJob:state.userJob, charClass:state.charClass, inspLv:state.inspLv, checks:state.checks, celebrated:state.celebrated, scanLog:state.scanLog.slice(-500), sockScanLog:state.sockScanLog.slice(-500), sockItems:state.sockItems.map(a=>a.map(i=>({lines:i.lines}))), items:state.items.map(a=>a.map(i=>({lines:i.lines,sockets:i.sockets||null,prismatic:!!i.prismatic,orb:!!i.orb}))), example:state.example}));
+  try{ localStorage.setItem(KEY, JSON.stringify({build:state.build, focus:state.focus, autoAdd:state.autoAdd||'off', lastAdded:state.lastAdded||null, mainStat:state.mainStat, userJob:state.userJob, charClass:state.charClass, inspLv:state.inspLv, checks:state.checks, celebrated:state.celebrated, scanLog:state.scanLog.slice(-500), sockScanLog:state.sockScanLog.slice(-500), sockItems:state.sockItems.map(a=>a.map(i=>({lines:i.lines}))), items:state.items.map(a=>a.map(i=>({lines:i.lines,sockets:i.sockets||null,prismatic:!!i.prismatic,orb:!!i.orb}))), example:state.example}));
     if(BRIDGE && BRIDGE.notifySync) BRIDGE.notifySync();
   }catch(e){}
 }
@@ -786,17 +788,21 @@ function shouldAutoAdd(sc, mode){
   if(mode==='gain'){ const ev = evalItem(sc); return ev.gain>0 || ev.outsGain>0; }
   return false;
 }
+const scanSig = sc => !sc || sc.slot===null ? '' : state.focus==='sockets'
+  ? (sc.sockets && sc.sockets.length ? `s:${sc.slot}:${sc.sockets.join(',')}` : '')
+  : (sc.lines.length===3 ? `l:${sc.slot}:${[...sc.lines].sort().join(',')}` : '');
+const justAdded = sc => !!(state.lastAdded && Date.now() - state.lastAdded.at < 2500 && state.lastAdded.sig === scanSig(sc));
 function tryAddScanned(sc, mode='any'){
   if(!sc || sc.slot===null || (sc.job && sc.job!==state.userJob)) return false;
   syncFromStorage();
   if(hasDuplicate(sc)) return false;
   if(!shouldAutoAdd(sc, mode)) return false;
   if(state.focus==='sockets'){
-    if(sc.sockets && sc.sockets.length===3){ state.sockItems[sc.slot].push(mk(sc.sockets.slice())); return true; }
+    if(sc.sockets && sc.sockets.length===3){ state.sockItems[sc.slot].push(mk(sc.sockets.slice())); state.lastAdded={sig:scanSig(sc),at:Date.now()}; return true; }
   } else if(sc.lines.length===3 && noDupes(sc.lines)){
     state.items[sc.slot].push(mk(sc.lines.slice(), {sockets:sc.sockets, prismatic:sc.prismatic}));
     if(sc.sockets && sc.sockets.length===3) state.sockItems[sc.slot].push(mk(sc.sockets.slice()));
-    state.example=false; return true;
+    state.example=false; state.lastAdded={sig:scanSig(sc),at:Date.now()}; return true;
   }
   return false;
 }
@@ -812,6 +818,12 @@ function paintHud(root, html){
   const box = root.firstElementChild;
   if(BRIDGE && box) requestAnimationFrame(() => BRIDGE.showHud(box.offsetWidth + 2, box.offsetHeight + 2));
 }
+let hudFadeTimer = null;
+function scheduleHudRevert(){
+  clearTimeout(hudFadeTimer);
+  const left = state.lastAdded ? Math.max(60, 2500 - (Date.now() - state.lastAdded.at)) : 0;
+  if(left) hudFadeTimer = setTimeout(()=>{ if(HUD) renderHud(); else if(OV) renderOverlay(); }, left);
+}
 function renderHud(){
   const root = document.getElementById('ov-root'), sc = state.scan;
   if(!sc || (!sc.lines.length && sc.slot===null && !sc.sockets)){ paintHud(root, ''); return; }
@@ -821,11 +833,12 @@ function renderHud(){
     return;
   }
   if(state.focus==='sockets' && sc.sockets){
-    const dup = hasDuplicate(sc);
+    const dup = hasDuplicate(sc), added = dup && justAdded(sc);
+    if(added) scheduleHudRevert();
     const se = evalSockets(sc.sockets);
     const win = !dup && se.score===3 && se.hasPrism;
-    const cls = dup ? '' : win ? 'win' : se.score>=2 ? 'good' : 'bad';
-    const verdict = dup ? `<span class="pill">ALREADY OWNED</span>` : win ? `<span class="pill win">★ 3/3 PERFECT SOCKETS ★</span>` : se.score>=2 ? `<span class="pill ok">${se.score}/3 GOOD SOCKETS</span>` : `<span class="pill short">PASS (${se.score}/3 sockets)</span>`;
+    const cls = added ? 'good' : dup ? 'owned' : win ? 'win' : se.score>=2 ? 'good' : 'bad';
+    const verdict = added ? `<span class="pill ok">✓ ADDED!</span>` : dup ? `<span class="pill owned">ALREADY OWNED</span>` : win ? `<span class="pill win">★ 3/3 PERFECT SOCKETS ★</span>` : se.score>=2 ? `<span class="pill ok">${se.score}/3 GOOD SOCKETS</span>` : `<span class="pill short">PASS (${se.score}/3 sockets)</span>`;
     const chips = se.sockets.map((c,i)=>`<span class="chip s-${c} ${se.hits[i]?'need':'wasted'}">${SOCK_LABEL[c]||c}</span>`).join('');
     paintHud(root, `<div class="hud ${cls}"><div class="hud-top"><span class="hud-slot">${slot} • ${state.mainStat}</span>${verdict}</div><div class="row">${chips}${!dup&&sc.slot!==null?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`);
     return;
@@ -834,13 +847,16 @@ function renderHud(){
   const res = solve(state.items);
   const missing = []; res.counts.forEach((c,i)=>{ for(let j=c;j<T[i];j++) missing.push(STATS[i].k); });
   const ready = sc.slot!==null && sc.lines.length===3;
-  const dup = ready && hasDuplicate(sc);
+  const dup = ready && hasDuplicate(sc), added = dup && justAdded(sc);
+  if(added) scheduleHudRevert();
   const ev = ready && !dup ? evalItem(sc) : null;
   const win = ev && ev.gain>0 && ev.after===TOTAL;
   const keep = ev && (ev.gain>0 || ev.outsGain>0);
-  const cls = dup ? '' : ev ? (win ? 'win' : keep ? 'good' : 'bad') : '';
-  const verdict = dup
-    ? `<span class="pill">ALREADY OWNED</span>`
+  const cls = added ? 'good' : dup ? 'owned' : ev ? (win ? 'win' : keep ? 'good' : 'bad') : '';
+  const verdict = added
+    ? `<span class="pill ok">✓ ADDED!</span>`
+    : dup
+    ? `<span class="pill owned">ALREADY OWNED</span>`
     : ev
       ? (ev.gain>0
           ? (win ? `<span class="pill win">★ FINISHES SET! ${TOTAL}/${TOTAL} ★</span>` : `<span class="pill ok">KEEP +${ev.gain} (${ev.before}→${ev.after}/${TOTAL})</span>`)
@@ -873,6 +889,11 @@ function renderOverlay(){
   if(state.scanStatus==='waiting') card = `<div class="ov-note">Hover the item now... (scanning in 1.5s)</div>`;
   else if(state.scanStatus==='scanning') card = `<div class="ov-note">Reading tooltip...</div>`;
   else if(state.scanError) card = `<div class="ov-note warn">${state.scanError}</div>`;
+  else if(!sc && state.lastAdded && Date.now()-state.lastAdded.at<2500){
+    const s = SLOTS[+state.lastAdded.sig.split(':')[1]] || 'item';
+    card = `<div class="verdict yes">✓ Added ${s} to your gear!</div>`;
+    scheduleHudRevert();
+  }
   else if(!sc) card = `<div class="ov-note">Hover an item in game and press <b>F8</b> (or Scan).</div>`;
   if(sc){
     const wrongJob = sc.job && sc.job!==state.userJob;
@@ -962,6 +983,7 @@ function syncFromStorage(){
     if(raw && raw.charClass) state.charClass = raw.charClass;
     if(raw && raw.focus) state.focus = raw.focus;
     if(raw && raw.autoAdd) state.autoAdd = raw.autoAdd;
+    if(raw && raw.lastAdded) state.lastAdded = raw.lastAdded;
     if(raw && typeof raw.inspLv==='number') state.inspLv = raw.inspLv;
     if(raw && Array.isArray(raw.scanLog)) state.scanLog = raw.scanLog;
     if(raw && Array.isArray(raw.sockScanLog)) state.sockScanLog = raw.sockScanLog;

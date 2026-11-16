@@ -25,13 +25,14 @@ function createWindows() {
   overlay.loadFile(PAGE, { query: { overlay: '1' } });
 
   hud = new BrowserWindow({
-    width: 320, height: 80, show: false,
+    width: 320, height: 80, show: false, opacity: 0,
     frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true,
     resizable: false, hasShadow: false, focusable: false, webPreferences
   });
   hud.setAlwaysOnTop(true, 'screen-saver');
   hud.setIgnoreMouseEvents(true);
   hud.loadFile(PAGE, { query: { hud: '1' } });
+  hud.once('ready-to-show', () => { if (hud && !hud.isDestroyed()) hud.showInactive(); });
 
   mainWin.on('closed', () => {
     clearInterval(hoverTimer);
@@ -219,12 +220,25 @@ function getForegroundState() {
   });
 }
 
+let hudFade = null, hudTarget = 0;
+function fadeHud(to) {
+  if (!hud || hud.isDestroyed() || hudTarget === to) return;
+  hudTarget = to;
+  clearInterval(hudFade);
+  const step = to > 0 ? 0.28 : -0.32;
+  hudFade = setInterval(() => {
+    if (!hud || hud.isDestroyed()) { clearInterval(hudFade); return; }
+    const next = Math.max(0, Math.min(1, hud.getOpacity() + step));
+    hud.setOpacity(next);
+    if ((step > 0 && next >= 1) || (step < 0 && next <= 0)) clearInterval(hudFade);
+  }, 12);
+}
 let lastKeyAt = { f7: 0, f8: 0, f9: 0 };
 function triggerF7() {
   const now = Date.now(); if (now - lastKeyAt.f7 < 350) return; lastKeyAt.f7 = now;
   console.log('KEY: F7');
   if (overlay && !overlay.isDestroyed()) overlay.webContents.send('quick-add');
-  if (hud && !hud.isDestroyed()) hud.hide();
+  fadeHud(0);
 }
 function triggerF8() {
   const now = Date.now(); if (now - lastKeyAt.f8 < 350) return; lastKeyAt.f8 = now;
@@ -253,15 +267,15 @@ const hoverTimer = setInterval(() => {
     }
     if (!lastPt || dist(pt, lastPt) > 12) {
       lastPt = pt; stillSince = Date.now();
-      if (scannedAt && dist(pt, scannedAt) > 38) { scannedAt = null; if (hud && !hud.isDestroyed()) hud.hide(); }
+      if (scannedAt && dist(pt, scannedAt) > 38) { scannedAt = null; fadeHud(0); }
       return;
     }
-    if (!scannedAt && Date.now() - stillSince >= 150 && /maplestory/i.test(st.fg || '')) {
+    if (!scannedAt && Date.now() - stillSince >= 60 && /maplestory/i.test(st.fg || '')) {
       scannedAt = pt;
       scan(false);
     }
   });
-}, 60);
+}, 40);
 async function scan(fromUI = false) {
   if (scanning || !overlay) return;
   scanning = true;
@@ -313,9 +327,10 @@ app.whenReady().then(() => {
       hud.setBounds({ x: nx, y: ny, width: W, height: H });
     }
     if (!hud.isVisible()) hud.showInactive();
+    fadeHud(1);
   });
-  ipcMain.on('hud-hide', () => hud && hud.hide());
-  ipcMain.on('overlay-hide', () => { if (overlay) overlay.hide(); if (hud) hud.hide(); });
+  ipcMain.on('hud-hide', () => fadeHud(0));
+  ipcMain.on('overlay-hide', () => { if (overlay) overlay.hide(); fadeHud(0); });
   ipcMain.on('main-show', () => { if (mainWin) { mainWin.show(); mainWin.focus(); } });
   ipcMain.on('sync-state', e => {
     for (const w of BrowserWindow.getAllWindows()) {
