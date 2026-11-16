@@ -34,10 +34,12 @@ function createWindows() {
   hud.loadFile(PAGE, { query: { hud: '1' } });
 
   mainWin.on('closed', () => {
+    clearInterval(hoverTimer);
     globalShortcut.unregisterAll();
     if (ocrProc) { try { ocrProc.kill(); } catch (e) {} ocrProc = null; }
     if (hud && !hud.isDestroyed()) hud.destroy();
     if (overlay && !overlay.isDestroyed()) overlay.destroy();
+    overlay = null; hud = null;
     app.quit();
   });
 }
@@ -221,8 +223,8 @@ let scanning = false, autoScan = true;
 let lastPt = null, stillSince = 0, scannedAt = null;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
-setInterval(() => {
-  if (!autoScan || scanning || !overlay || !overlay.isVisible()) return;
+const hoverTimer = setInterval(() => {
+  if (!autoScan || scanning || !overlay || overlay.isDestroyed() || !overlay.isVisible()) return;
   const pt = screen.getCursorScreenPoint();
   const ob = overlay.getBounds();
   if (pt.x >= ob.x && pt.x <= ob.x + ob.width && pt.y >= ob.y && pt.y <= ob.y + ob.height) {
@@ -230,7 +232,7 @@ setInterval(() => {
   }
   if (!lastPt || dist(pt, lastPt) > 12) {
     lastPt = pt; stillSince = Date.now();
-    if (scannedAt && dist(pt, scannedAt) > 28) { scannedAt = null; if (hud) hud.hide(); }
+    if (scannedAt && dist(pt, scannedAt) > 28) { scannedAt = null; if (hud && !hud.isDestroyed()) hud.hide(); }
     return;
   }
   if (!scannedAt && Date.now() - stillSince >= 150) {
@@ -245,8 +247,8 @@ async function scan(fromUI = false) {
   scanning = true;
   const pt = screen.getCursorScreenPoint();
   const send = msg => {
-    overlay.webContents.send('scan-result', msg);
-    if (hud) hud.webContents.send('scan-result', { ...msg, pt });
+    if (overlay && !overlay.isDestroyed()) overlay.webContents.send('scan-result', msg);
+    if (hud && !hud.isDestroyed()) hud.webContents.send('scan-result', { ...msg, pt });
   };
   try {
     overlay.showInactive();
