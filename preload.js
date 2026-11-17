@@ -8,9 +8,16 @@ contextBridge.exposeInMainWorld('quanah', {
   hideHud: () => ipcRenderer.send('hud-hide'),
   hideOverlay: () => ipcRenderer.send('overlay-hide'),
   showOverlay: () => ipcRenderer.send('overlay-show'),
+  isOverlayOpen: () => ipcRenderer.invoke('overlay-visible'),
+  onOverlayState: cb => ipcRenderer.on('overlay-state', (_e, open) => cb(open)),
   showMain: () => ipcRenderer.send('main-show'),
   notifySync: () => ipcRenderer.send('sync-state'),
   onSync: cb => ipcRenderer.on('sync-state', () => cb()),
   onQuickAdd: cb => ipcRenderer.on('quick-add', () => cb()),
-  onScan: cb => ipcRenderer.on('scan-result', (_e, msg) => cb(msg))
+  onScan: cb => ipcRenderer.on('scan-result', (_e, msg) => cb(msg)),
+  openDungeonOverlay: () => ipcRenderer.send('dng-overlay-show'),
+  hideDungeonOverlay: () => ipcRenderer.send('dng-overlay-hide'),
+  resizeDungeonOverlay: h => ipcRenderer.send('dng-overlay-resize', h),
+  scanDungeon: () => ipcRenderer.invoke('dng-scan'),
+  onDungeonScan: cb => ipcRenderer.on('dng-scan-result', (_e, msg) => cb(msg))
 });

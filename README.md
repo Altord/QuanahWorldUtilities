@@ -1,4 +1,4 @@
-# Quanah World Utilities (v0.1.4)
+# Quanah World Utilities (v0.2.0)
 
 A desktop overlay, real-time item scanner, and progression companion for **MapleStory Quanah World**.
 
@@ -7,11 +7,11 @@ A desktop overlay, real-time item scanner, and progression companion for **Maple
 ## Download & Web Tool
 
 - **Web Tool (No Download):** **[Open Quanah World Utilities Web App](https://altord.github.io/QuanahWorldUtilities/)**
-  - Includes all manual calculators and guides (**3L Solver**, **Socket Focus**, **Pre-Leap**, **Jewels**, **Dungeon**, **Progression**).
+  - Includes all manual calculators and guides (**3L Solver**, **Socket Focus**, **3L + Sockets**, **Pre-Leap**, **Jewels**, **Dungeon**, **Progression**), or open `Quanah World Utilities.htm` locally.
   - **Note:** The **in-game overlay, cursor HUD, Auto-Add, and screen OCR scanner do not work in a web browser** — browsers cannot capture the game screen or draw over MapleStory. Use the Windows Desktop App below if you want live in-game scanning.
 - **Desktop App (with In-Game Overlay & Scanner):** Download from **[Releases](https://github.com/Altord/QuanahWorldUtilities/releases)** (no Administrator privileges required):
-  - `Quanah World Utilities 0.1.4.exe` — Portable standalone `.exe` (double-click to run, no installation needed).
-  - `Quanah World Utilities Setup 0.1.4.exe` — Standard Windows installer.
+  - `Quanah World Utilities 0.2.0.exe` — Portable standalone `.exe` (double-click to run, no installation needed).
+  - `Quanah World Utilities Setup 0.2.0.exe` — Standard Windows installer.
 
 > **Important:** Run MapleStory in **Windowed** or **Borderless** mode so the overlay and cursor HUD can render on top of the game.
 
@@ -73,3 +73,10 @@ When you hover over an item in your inventory, a compact click-through badge app
 - **`Jewels`:** Full Jewel Color table (`Red`/`Gray` = STR, `Green` = DEX, `Purple` = LUK, `Blue` = INT) and Prismatic Lv. 4+ rules.
 - **`Dungeon`:** 5-room dungeon formula, Dungeon Storage early-exit tips, buffs/fatigue, and Dungeon vs. Proving Grounds drop tables.
 - **`Progression`:** Inspector Level & death-inheritance milestones (Lv. 50 / 80 / 100), Mapae Module & Inspector Badge tips, Starforce/Bossing rules, Hologram Skills reference, and Known Bugs.
+
+---
+
+## Credits & Sources
+
+- **[The Quanah Files](https://docs.google.com/document/d/1X2P51gaWxZ_Ltxr466CEH26pK9OouXyDT5rOdbYxOhE/edit?tab=t.0)** by **PiercedMoon** — Primary Quanah World progression, Hologram, Jewel, Dungeon, Inspector, and Mapae guide.
+- **BlackHexgon** (on Discord) — Community info & contributions.

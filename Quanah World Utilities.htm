@@ -1,0 +1,1849 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{margin:0}[hidden]{display:none!important}</style>
+<title>Quanah World Utilities</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap">
+<style>
+/* Layout: two-column workbench. Left = add gear + inventory by slot. Right = sticky solved set. Stacks on phones. */
+:root{
+  --bg:#eef1f6; --surface:#ffffff; --sunk:#e3e8f0; --fg:#1a2233; --muted:#5b6679; --line:#cfd6e2;
+  --accent:#d9541e; --on-accent:#ffffff; --good:#1f8a4c; --warn:#a96a12;
+  --c-dl:#7a5cf0; --c-wh:#2f9bd6; --c-reg:#1fa67a; --c-atk:#e0484d; --c-class:#c98a1b; --c-crit:#d6409f; --c-other:#8590a3;
+  --display:"Space Grotesk","Segoe UI",system-ui,sans-serif;
+  --body:"Inter","Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg:#121722; --surface:#1b2230; --sunk:#141a26; --fg:#e8ecf4; --muted:#98a3b6; --line:#2e384b;
+  --accent:#ff8a4c; --on-accent:#1a1208; --good:#4cc38a; --warn:#e0b050; color-scheme:dark } }
+:root[data-theme="dark"]{
+  --bg:#121722; --surface:#1b2230; --sunk:#141a26; --fg:#e8ecf4; --muted:#98a3b6; --line:#2e384b;
+  --accent:#ff8a4c; --on-accent:#1a1208; --good:#4cc38a; --warn:#e0b050; color-scheme:dark }
+
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+::-webkit-scrollbar{width:8px;height:8px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:color-mix(in oklab,var(--line) 85%,var(--fg));border-radius:999px;border:2px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:var(--muted);border:2px solid transparent;background-clip:padding-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--body);font-size:14px;line-height:1.45;
+  padding-block:20px 40px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header h1{font-family:var(--display);font-size:26px;font-weight:700;margin:0;letter-spacing:-.01em}
+header p{margin:4px 0 0;color:var(--muted);max-width:65ch}
+body:not(.ov-mode) header p{min-height:42px}
+h2{font-family:var(--display);font-size:16px;font-weight:700;margin:0}
+.label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+button{font:inherit;color:inherit;cursor:pointer}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.grid{display:grid;gap:18px;grid-template-columns:minmax(0,1fr) minmax(0,400px);grid-template-areas:"add result" "inv result";align-items:start}
+#add{grid-area:add} #result{grid-area:result;position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px)} #inv{grid-area:inv}
+@media (max-width:860px){ .grid{grid-template-columns:minmax(0,1fr);grid-template-areas:"add" "result" "inv"} #result{position:static} }
+
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:14px;min-width:0}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.spread{justify-content:space-between}
+
+.banner{background:var(--sunk);border:1px dashed var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between}
+
+.tabs button{background:var(--sunk);border:1px solid var(--line);border-radius:6px;padding:7px 12px;font-weight:600}
+.tabs button .n{color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums;margin-left:4px}
+.tabs button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.tabs button[aria-pressed="true"] .n{color:inherit;opacity:.8}
+
+.chip{--c:var(--c-other);display:inline-flex;align-items:center;gap:6px;border-radius:5px;padding:3px 8px;font-size:12.5px;font-weight:500;white-space:nowrap;
+  background:color-mix(in oklab,var(--c) 16%,var(--surface));border:1px solid color-mix(in oklab,var(--c) 50%,var(--surface))}
+.chip::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c);flex:none}
+.chip.wasted{opacity:.5;text-decoration:line-through}
+.chip.empty{background:transparent;border-style:dashed;border-color:var(--line);color:var(--muted)}
+.chip.empty::before{display:none}
+button.chip{padding:8px 12px;font-size:13.5px}
+button.chip:disabled{opacity:.35;cursor:not-allowed}
+button.chip:not(:disabled):hover{background:color-mix(in oklab,var(--c) 30%,var(--surface))}
+.s-dl{--c:var(--c-dl)} .s-wh{--c:var(--c-wh)} .s-reg{--c:var(--c-reg)} .s-atk{--c:var(--c-atk)} .s-crit,.s-bd{--c:var(--c-crit)}
+.s-prismatic{--c:#ff8a4c;border-image:linear-gradient(90deg,#ff8a4c,#f0a92b,#4cc38a,#2f9bd6,#7a5cf0,#d6409f) 1}
+.s-prismatic::before{background:conic-gradient(#ff8a4c,#f0a92b,#4cc38a,#2f9bd6,#7a5cf0,#d6409f,#ff8a4c)}
+.s-red{--c:#e0484d} .s-green{--c:#1fa67a} .s-gray{--c:#8590a3} .s-purple{--c:#7a5cf0} .s-blue{--c:#2f9bd6}
+.chip.jewel::before{width:8px;height:11px;border-radius:50%;border:1.5px solid var(--c);background:color-mix(in oklab,var(--c) 35%,transparent)}
+.jicon{display:inline-block;width:11px;height:14px;border-radius:50%;border:2px solid var(--c);background:color-mix(in oklab,var(--c) 35%,var(--surface));flex:none}
+.jicon.s-prismatic{border-color:#ff8a4c;background:conic-gradient(#ff8a4c,#f0a92b,#4cc38a,#2f9bd6,#7a5cf0,#d6409f,#ff8a4c);box-shadow:0 0 6px rgba(255,138,76,.6)}
+.jicon.wasted{opacity:.4} .jicon.need{box-shadow:0 0 0 1.5px var(--good)}
+.socks{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding-left:8px;border-left:1px solid var(--line)}
+.s-mage,.s-pirate,.s-thief,.s-warrior,.s-archer{--c:var(--c-class)}
+
+.ghost{background:transparent;border:1px solid var(--line);border-radius:6px;padding:5px 10px;color:var(--muted)}
+.ghost:hover{color:var(--fg);border-color:var(--muted)}
+.ghost.danger{color:var(--c-atk);border-color:var(--c-atk)}
+.btn-add{background:var(--good);border:1px solid var(--good);border-radius:6px;padding:6px 12px;color:#0b1912;font-weight:700}
+.btn-add:hover:not(:disabled){filter:brightness(1.08)}
+.btn-add:disabled{opacity:.35;cursor:not-allowed;background:var(--sunk);border-color:var(--line);color:var(--muted)}
+.btn-dim{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 11px;color:var(--fg);font-weight:500}
+.btn-dim:hover{border-color:var(--muted)}
+
+.slots{display:grid;gap:14px 20px;grid-auto-flow:column;grid-template-rows:repeat(3,auto);grid-template-columns:repeat(2,minmax(0,1fr))}
+@media (max-width:560px){ .slots{grid-auto-flow:row;grid-template-rows:none;grid-template-columns:minmax(0,1fr)} }
+.picker{display:flex;flex-wrap:wrap;gap:16px 32px;align-items:flex-start}
+.tabs{display:grid;grid-auto-flow:column;grid-template-rows:repeat(3,auto);grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.tabs button{display:flex;justify-content:space-between;gap:10px;text-align:left}
+.cols{display:grid;grid-template-columns:repeat(3,auto);gap:6px 12px;align-items:start}
+.col{display:flex;flex-direction:column;gap:6px;min-width:0}
+.col .chip{justify-content:flex-start}
+.chip.has-icon::before{display:none}
+.chip svg{width:14px;height:14px;flex:none;color:color-mix(in oklab,var(--c) 70%,var(--fg))}
+.slot{display:flex;flex-direction:column;gap:8px;min-width:0}
+.slot-head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:1px solid var(--line);padding-bottom:6px}
+.slot-head h3{font-family:var(--display);font-size:14px;margin:0}
+.item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;border:1px solid transparent}
+.item .num{font-variant-numeric:tabular-nums;color:var(--muted);width:22px;flex:none;font-weight:600}
+.item .lines{display:flex;flex-wrap:wrap;gap:4px;flex:1;min-width:0}
+.item.picked{border-color:var(--good);background:color-mix(in oklab,var(--good) 9%,var(--surface))}
+.item.picked .num{color:var(--good)}
+.x{background:transparent;border:0;color:var(--muted);font-size:16px;line-height:1;padding:4px 6px;border-radius:4px;flex:none}
+.x:hover{color:var(--c-atk)}
+.none{color:var(--muted);padding:6px 8px}
+
+.score{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.score .big{font-family:var(--display);font-size:40px;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
+.score .of{color:var(--muted)}
+.pill{font-size:12px;font-weight:600;border-radius:999px;padding:3px 10px}
+.pill.ok{background:color-mix(in oklab,var(--good) 18%,var(--surface));color:var(--good)}
+.pill.short{background:color-mix(in oklab,var(--warn) 18%,var(--surface));color:var(--warn)}
+.pill.owned{background:color-mix(in oklab,var(--c-wh) 18%,var(--surface));color:var(--c-wh)}
+
+.reqs{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px}
+.req{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.req.miss .name{color:var(--warn);font-weight:600}
+.pips{display:flex;gap:3px}
+.pip{width:10px;height:10px;border-radius:2px;border:1.5px solid var(--c);background:transparent}
+.pip.on{background:var(--c)}
+
+.set{display:flex;flex-direction:column;gap:6px}
+.set .item{padding:5px 0;border:0}
+.set .slotname{width:68px;flex:none;font-weight:600}
+.set .num{width:auto}
+.hunt{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:12px}
+.hunt .opt{display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.hunt .opt b{width:68px;flex:none}
+.muted{color:var(--muted)}
+#result{max-height:calc(100vh - 24px);overflow:auto}
+.hunt .ghost{align-self:flex-start}
+.seg{display:inline-flex;background:var(--sunk);border:1px solid var(--line);border-radius:7px;padding:2px;gap:2px}
+.seg button{background:transparent;border:0;border-radius:5px;padding:4px 10px;font-size:12.5px;font-weight:600;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--on-accent)}
+.tag{background:var(--sunk);border:1px solid var(--line);border-radius:5px;padding:2px 6px;font-size:11.5px;color:var(--muted);flex:none}
+.tag[aria-pressed="true"]{border-color:var(--c-wh);color:var(--c-wh);background:color-mix(in oklab,var(--c-wh) 14%,var(--surface))}
+.tag.orb[aria-pressed="true"]{border-color:var(--c-dl);color:var(--c-dl);background:color-mix(in oklab,var(--c-dl) 14%,var(--surface))}
+.note-box{background:var(--sunk);border:1px solid var(--line);border-radius:7px;padding:8px 10px;font-size:12.5px;color:var(--muted)}
+.nav{display:flex;flex-wrap:wrap;gap:6px;border-bottom:1px solid var(--line);padding-bottom:10px}
+.nav button{background:var(--sunk);border:1px solid var(--line);border-radius:7px;padding:6px 14px;font-weight:600;font-family:var(--display)}
+.nav button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.chk-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+.chk-list{display:flex;flex-direction:column;gap:8px}
+.chk{display:flex;align-items:flex-start;gap:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--sunk);cursor:pointer;text-align:left}
+.chk.done{opacity:.65;border-color:var(--good)}
+.chk.done b{text-decoration:line-through}
+.chk input{margin-top:3px;accent-color:var(--good);flex:none}
+.jtable{width:100%;border-collapse:collapse;font-size:13.5px}
+.jtable th,.jtable td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left}
+.jtable th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+.jtable tr.match td{background:color-mix(in oklab,var(--good) 12%,var(--surface));font-weight:600}
+.jdot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;vertical-align:middle}
+.prob-row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.prob-pill{font-size:11.5px;font-weight:600;border-radius:6px;padding:2px 8px;background:var(--sunk);border:1px solid var(--line);color:var(--fg);cursor:help}
+.prob-pill b{color:var(--accent)}
+.calc-grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.calc-box{background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.calc-field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted)}
+.calc-field input{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:6px 8px;color:var(--fg);font:inherit;font-size:13.5px;font-weight:600;width:100%}
+.calc-field input:focus{outline:none;border-color:var(--accent)}
+.calc-kpi{font-family:var(--display);font-size:22px;font-weight:700;line-height:1.1;color:var(--fg)}
+.calc-kpi.ok{color:var(--good)} .calc-kpi.warn{color:var(--warn)}
+
+/* Overlay mode (?overlay=1): compact always-on-top panel drawn over the game */
+body.ov-mode{background:transparent;padding:0;overflow:hidden}
+.ov{background:rgba(27,34,48,.96);border:1px solid var(--line);border-radius:12px;padding:10px 12px 12px;display:flex;flex-direction:column;gap:10px;box-shadow:0 6px 24px rgba(0,0,0,.45);font-size:13px;max-height:100vh;overflow-y:auto;scrollbar-gutter:stable}
+.ov>*{flex-shrink:0}
+.ov-head{display:flex;justify-content:space-between;align-items:center;gap:8px;-webkit-app-region:drag;cursor:move}
+.ov-head h2{font-size:14px;white-space:nowrap}
+.ov-head .row{-webkit-app-region:no-drag;flex-wrap:nowrap;gap:5px}
+.ov-head .ghost{white-space:nowrap}
+.ov .ghost{padding:4px 8px;font-size:12px}
+.ov .ghost[aria-pressed="true"]{border-color:var(--good);color:var(--good);background:color-mix(in oklab,var(--good) 14%,var(--surface))}
+.ov .chip{font-size:12px;padding:2px 7px} .ov button.chip{padding:5px 9px;font-size:12px}
+.ov-note{color:var(--muted)} .ov-note.warn{color:var(--warn)}
+.aa-tip{background:var(--sunk);border:1px solid var(--line);border-radius:7px;padding:5px 8px;font-size:11.5px;color:var(--muted);line-height:1.35}
+.aa-tip b{color:var(--fg)} .aa-tip.hover{border-color:var(--accent)}
+.ov-card{border:1px solid var(--line);border-radius:8px;padding:8px;display:flex;flex-direction:column;gap:8px;background:var(--sunk)}
+.verdict{font-weight:700;font-family:var(--display)}
+.verdict.yes{color:var(--good)} .verdict.no{color:var(--warn)}
+.mini-tabs{display:flex;flex-wrap:wrap;gap:4px}
+.mini-tabs button{background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 8px;font-size:12px}
+.mini-tabs button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.ov .hunt{padding-top:8px}
+.ov .hunt .opt b{width:54px}
+.slot-need{background:var(--sunk);border:1px solid var(--line);border-radius:7px;padding:6px 8px;display:flex;flex-direction:column;gap:4px}
+.slot-need .row{gap:4px}
+/* Cursor HUD (?hud=1): compact click-through badge next to the hovered item */
+.hud{display:inline-flex;flex-direction:column;gap:6px;background:rgba(20,26,38,.96);border:1.5px solid var(--line);border-radius:10px;padding:8px 10px;box-shadow:0 6px 22px rgba(0,0,0,.55);font-size:12.5px;max-width:360px}
+.hud.good{border-color:var(--good)} .hud.bad{border-color:var(--warn)} .hud.owned{border-color:var(--c-wh)}
+.hud.win{position:relative;border:2px solid transparent;background:linear-gradient(rgba(20,26,38,.96),rgba(20,26,38,.96)) padding-box,linear-gradient(90deg,#ff8a4c,#f0a92b,#4cc38a,#2f9bd6,#7a5cf0,#d6409f,#ff8a4c) border-box;background-size:100% 100%,200% 100%;animation:hudRainbow 1.4s linear infinite,hudPulse .9s ease-in-out infinite alternate;box-shadow:0 0 18px rgba(76,195,138,.55),0 0 34px rgba(122,92,240,.4)}
+.ov.win{border:2px solid transparent;background:linear-gradient(rgba(27,34,48,.96),rgba(27,34,48,.96)) padding-box,linear-gradient(90deg,#ff8a4c,#f0a92b,#4cc38a,#2f9bd6,#7a5cf0,#d6409f,#ff8a4c) border-box;background-size:100% 100%,200% 100%;animation:hudRainbow 1.4s linear infinite;box-shadow:0 0 18px rgba(76,195,138,.45),0 0 28px rgba(122,92,240,.35)}
+.pill.win{background:linear-gradient(90deg,#ff8a4c,#f0a92b,#4cc38a,#2f9bd6,#7a5cf0,#d6409f);background-size:200% 100%;animation:hudRainbow 1.4s linear infinite;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.5);font-weight:700}
+.spark{position:absolute;width:6px;height:6px;border-radius:50%;pointer-events:none;left:50%;top:50%;animation:sparkOut .95s ease-out infinite}
+@keyframes hudRainbow{0%{background-position:0 0,0 0}100%{background-position:0 0,200% 0}}
+@keyframes hudPulse{from{transform:scale(1)}to{transform:scale(1.03)}}
+@keyframes sparkOut{0%{transform:translate(-50%,-50%) scale(1);opacity:1}100%{transform:translate(var(--dx),var(--dy)) scale(0);opacity:0}}
+.hud-top{display:flex;align-items:center;justify-content:space-between;gap:10px;font-family:var(--display);font-weight:700}
+.hud-slot{color:var(--muted);font-size:11.5px;text-transform:uppercase;letter-spacing:.06em}
+.chip.need{border-color:var(--good);box-shadow:0 0 0 1px color-mix(in oklab,var(--good) 45%,transparent)}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <div class="row spread"><h1>Quanah World Utilities</h1><nav class="nav" id="nav"></nav></div>
+    <p>Quanah World 3-Line & Jewel Socket Assistant.</p>
+  </header>
+  <div id="tab-guide" hidden></div>
+  <div id="tab-solver">
+    <div id="banner"></div>
+    <section class="panel" id="controls" style="margin-bottom:16px"></section>
+    <div class="grid">
+      <section class="panel" id="add"></section>
+      <section class="panel" id="result"></section>
+      <section class="panel" id="inv"></section>
+    </div>
+  </div>
+</div>
+
+<script src="lib/parse.js"></script>
+<script>
+const SLOTS = ['Hat','Top','Bottom','Cape','Glove','Shoe'];
+const noDupes = lines => { const real = lines.filter(k=>k!=='other'); return new Set(real).size===real.length; };
+const STATS = [
+  {k:'dl',n:'Dimensional Leap',t:3},{k:'wh',n:'White Hole',t:3},{k:'reg',n:'Registry',t:3},{k:'atk',n:'ATK',t:3},
+  {k:'mage',n:'Mage',t:1},{k:'pirate',n:'Pirate',t:1},{k:'thief',n:'Thief',t:1},{k:'warrior',n:'Warrior',t:1},{k:'archer',n:'Bowman',t:1},
+  {k:'crit',n:'Crit DMG',t:1},{k:'bd',n:'Boss DMG',t:0}
+];
+const BUILDS = {
+  meta: { name: 'Meta Registry', desc: '3 DL, 3 WH, 3 Reg, 3 ATK, 5 classes, 1 Crit DMG', t: {dl:3,wh:3,reg:3,atk:3,mage:1,pirate:1,thief:1,warrior:1,archer:1,crit:1,bd:0} },
+  noclass: { name: 'No-Class Crit', desc: '3 DL, 3 WH, 3 Reg, 3 ATK, 3 Crit DMG (skips class skills)', t: {dl:3,wh:3,reg:3,atk:3,mage:0,pirate:0,thief:0,warrior:0,archer:0,crit:3,bd:0} },
+  boss: { name: 'Boss (No-WH)', desc: '3 DL, 3 Reg, 3 ATK, 3 Boss DMG, 5 classes, 1 Crit DMG', t: {dl:3,wh:0,reg:3,atk:3,mage:1,pirate:1,thief:1,warrior:1,archer:1,crit:1,bd:3} }
+};
+const NAME = {other:'Other'}; const IDX = {}; const T = []; const R = []; const M = [];
+let TOTAL = 0;
+function applyBuild(key){
+  const b = BUILDS[key] || BUILDS.meta;
+  let mult = 1; TOTAL = 0;
+  STATS.forEach((s,i)=>{
+    s.t = b.t[s.k] || 0;
+    NAME[s.k]=s.n; IDX[s.k]=i; T[i]=s.t; R[i]=s.t+1; M[i]=mult; mult*=R[i]; TOTAL += s.t;
+  });
+}
+applyBuild('meta');
+
+// ---------- solver: DP over capped stat counts ----------
+function addLines(st, lines){
+  for(const k of lines){ const i=IDX[k]; if(i===undefined) continue;
+    if(Math.floor(st/M[i])%R[i] < T[i]) st += M[i]; }
+  return st;
+}
+function digits(st){ return T.map((_,i)=>Math.floor(st/M[i])%R[i]); }
+function score(st){ return digits(st).reduce((a,b)=>a+b,0); }
+
+function runDP(items, skip){
+  let cur = new Map([[0,{ways:1}]]); const layers = [];
+  SLOTS.forEach((_,s)=>{
+    if(s===skip) return;
+    const opts = items[s].length ? items[s] : [null];
+    const next = new Map();
+    for(const [st,info] of cur) for(const it of opts){
+      const ns = it ? addLines(st,it.lines) : st;
+      const e = next.get(ns);
+      if(e) e.ways += info.ways; else next.set(ns,{prev:st,item:it,slot:s,ways:info.ways});
+    }
+    layers.push(next); cur = next;
+  });
+  return layers;
+}
+function solve(items){
+  const layers = runDP(items,-1);
+  let best=-1, bestSt=0;
+  for(const st of layers[layers.length-1].keys()){ const sc=score(st); if(sc>best){best=sc;bestSt=st;} }
+  const ways = layers[layers.length-1].get(bestSt).ways;
+  const picks = Array(SLOTS.length).fill(null);
+  let st = bestSt;
+  for(let l=layers.length-1;l>=0;l--){ const e=layers[l].get(st); picks[e.slot]=e.item; st=e.prev; }
+  // which lines in the chosen set count toward the goal
+  const run = T.map(()=>0);
+  const used = picks.map(it => it ? it.lines.map(k=>{ const i=IDX[k]; if(i===undefined||run[i]>=T[i]) return false; run[i]++; return true; }) : []);
+  // one-piece-away options: for each slot, which 3 lines would finish the set
+  const hunt = [];
+  if(best<TOTAL) SLOTS.forEach((_,s)=>{
+    const ls = runDP(items,s); const seen = new Set();
+    for(const st2 of ls[ls.length-1].keys()){
+      if(score(st2)!==TOTAL-3) continue;
+      const d = digits(st2); const need=[];
+      d.forEach((c,i)=>{ for(let j=c;j<T[i];j++) need.push(STATS[i].k); });
+      if(!noDupes(need)) continue; // a piece cannot roll the same line twice
+      const key = need.join(','); if(!seen.has(key)){ seen.add(key); hunt.push({slot:s,need}); }
+    }
+  });
+  return {best, counts:digits(bestSt), picks, used, ways, hunt};
+}
+
+// ---------- state ----------
+const KEY = 'threeLineSetSolver.v1';
+const EXAMPLE = [
+  [['dl','atk','mage'],['atk','wh','other']],
+  [['wh','reg','crit'],['dl','mage','crit']],
+  [['reg','dl','pirate']],
+  [['atk','wh','thief'],['thief','archer','dl']],
+  [['dl','wh','warrior'],['crit','wh','reg']],
+  [['atk','reg','archer']]
+];
+let uid = 1;
+const mk = (lines, extra={}) => ({id:uid++, lines, sockets:Array.isArray(extra.sockets)?extra.sockets:null, prismatic:!!extra.prismatic, orb:!!extra.orb});
+let state = {items:SLOTS.map(()=>[]), sockItems:SLOTS.map(()=>[]), active:0, pending:[], pendSock:[], example:false, confirmClear:false, auto:true, build:'meta', focus:'lines', tab:'solver', checks:{}, mainStat:'STR', userJob:'WAR', charClass:'', inspLv:1, scanLog:[], sockScanLog:[], celebrated:{}};
+const JOBS = {
+  WAR: {name:'Warrior', stat:'STR', sub:'STR + DEX'},
+  BOW: {name:'Bowman', stat:'DEX', sub:'DEX'},
+  MAG: {name:'Magician', stat:'INT', sub:'INT'},
+  THF: {name:'Thief', stat:'LUK', sub:'LUK'},
+  PIR: {name:'Pirate', stat:'STR', sub:'STR + DEX'}
+};
+const JEWELS = [
+  {color:'Red', hex:'#e0484d', atk:'ATT', main:'STR', sec:'DEX'},
+  {color:'Green', hex:'#1fa67a', atk:'ATT', main:'DEX', sec:'STR'},
+  {color:'Gray', hex:'#8590a3', atk:'ATT', main:'STR', sec:'DEX'},
+  {color:'Purple', hex:'#7a5cf0', atk:'ATT', main:'LUK', sec:'DEX'},
+  {color:'Blue', hex:'#2f9bd6', atk:'Magic ATT', main:'INT', sec:'LUK'}
+];
+const PRELEAP = [
+  { title: 'Bare Minimum (Required to Leap)', items: [
+    ['leap-char', 'Confirm Quanah Leap & Burning character', 'You can only leap ONE character from Challenger World 4.'],
+    ['lv260', 'Reach Lv. 260', 'Use VIP boosters and coupons (~1 hour with Quanah Burn).'],
+    ['gift-title', 'Claim Gift for the Future & pop title coupons', 'Minimum requirement before leaping over to Quanah.']
+  ]},
+  { title: 'Basic Prep (Before Leaping)', items: [
+    ['drop-acc', '3 drop-gear rings + Greed Pendant', 'Core drop accessories before leaving CW.'],
+    ['pet-snack', 'Pet Snack for 3 pets', 'Grab from the Reward Points section of the Cash Shop.'],
+    ['ia', 'Roll Inner Ability', 'Use whatever honor you have from CW events or shops.'],
+    ['echo', "Unlock Hero's Echo", 'Quick free damage buff before leaping.'],
+    ['janus1', 'Janus 1 (optional)', 'Helpful for Proving Grounds farming.']
+  ]},
+  { title: 'Recommended Optimizations', items: [
+    ['drop-pot', 'Potential drop-gear accessories', 'Can be done in CW or QW.'],
+    ['vellum', 'Vellum Crusher medal', 'Solid early medal before leaping.'],
+    ['one-ring', '1 ring only (KT / Gollux / Meister)', 'Only need 1 since you can get a Slime Ring in QW.'],
+    ['pendant', 'Dom or Gollux pendant (optional)', 'Daybreak Pendant is farmable in QW.'],
+    ['arcane', 'Max out Arcane Symbols', 'Much slower to level up in Quanah World.'],
+    ['lv264', 'Push to Lv. 264', 'Every 5 levels in QW grants a Lv. 5 Sacred Symbol.'],
+    ['prof', 'Get Professions', 'Lets you use 2 potions at the same time.'],
+    ['autobuff', '2 auto-buff pets', 'Tera Blink hat + steal the Lethe pet if not playing Lethe.'],
+    ['sf17', 'Use 17★ scrolls on spare damage ring', 'Good value before leaping.'],
+    ['janus20', 'Janus 20 coupon (very optional)', 'Nice to have, not required.']
+  ]}
+];
+function load(){
+  try{
+    const raw = JSON.parse(localStorage.getItem(KEY));
+    if(raw && raw.checks && typeof raw.checks==='object') state.checks = raw.checks;
+    if(raw && raw.mainStat) state.mainStat = raw.mainStat;
+    if(raw && raw.userJob && JOBS[raw.userJob]) state.userJob = raw.userJob;
+    if(raw && raw.charClass) state.charClass = raw.charClass;
+    if(raw && raw.focus) state.focus = raw.focus;
+    if(raw && raw.sockGoal) state.sockGoal = raw.sockGoal;
+    if(raw && raw.autoAdd) state.autoAdd = raw.autoAdd;
+    if(raw && raw.lastAdded) state.lastAdded = raw.lastAdded;
+    if(raw && raw.dust && typeof raw.dust==='object') state.dust = raw.dust;
+    if(raw && raw.prismFd && typeof raw.prismFd==='object') state.prismFd = raw.prismFd;
+    if(raw && raw.leap && typeof raw.leap==='object') state.leap = raw.leap;
+    if(raw && raw.mapae && typeof raw.mapae==='object') state.mapae = raw.mapae;
+    if(raw && raw.gemExp && typeof raw.gemExp==='object') state.gemExp = raw.gemExp;
+    if(raw && raw.dng && typeof raw.dng==='object') state.dng = raw.dng;
+    if(raw && typeof raw.inspLv==='number') state.inspLv = raw.inspLv;
+    if(raw && Array.isArray(raw.scanLog)) state.scanLog = raw.scanLog;
+    if(raw && Array.isArray(raw.sockScanLog)) state.sockScanLog = raw.sockScanLog;
+    if(raw && raw.celebrated && typeof raw.celebrated==='object') state.celebrated = raw.celebrated;
+    if(raw && Array.isArray(raw.sockItems) && raw.sockItems.length===SLOTS.length){
+      state.sockItems = raw.sockItems.map(a=>a.map(x=>mk(x.lines||x)));
+    }
+    if(raw && raw.build && BUILDS[raw.build]){ state.build = raw.build; applyBuild(state.build); }
+    if(raw && !raw.example && Array.isArray(raw.items) && raw.items.length===SLOTS.length){
+      state.items = raw.items.map(a=>a.filter(x=>noDupes(Array.isArray(x)?x:x.lines)).map(x=>Array.isArray(x)?mk(x):mk(x.lines,x)));
+      syncItemSocketsToSockItems();
+      return;
+    }
+  }catch(e){}
+  state.items = EXAMPLE.map(a=>a.map(l=>mk(l))); state.example = true;
+}
+function syncItemSocketsToSockItems(){
+  SLOTS.forEach((_,si)=>{
+    state.items[si].forEach(it=>{
+      if(!it.sockets || !it.sockets.length) return;
+      const sig = it.sockets.join(',');
+      if(!state.sockItems[si].some(s=>s.lines.join(',')===sig)){
+        state.sockItems[si].push(mk(it.sockets.slice()));
+      }
+    });
+  });
+}
+function save(){
+  try{ localStorage.setItem(KEY, JSON.stringify({build:state.build, focus:state.focus, sockGoal:state.sockGoal||'pris2', autoAdd:state.autoAdd||'off', lastAdded:state.lastAdded||null, dust:state.dust||{cur:0,spare:0,per:100}, prismFd:state.prismFd||{dl:0,wh:0}, leap:state.leap||{cur:260,target:264}, mapae:state.mapae||{stars:0,pot3l:false}, gemExp:state.gemExp||{curExp:0,targetExp:1000,fodderTier:'Rare',tierExp:{Normal:50,Rare:150,Epic:400,Unique:1000,Legendary:2500},tierDust:{Normal:50,Rare:100,Epic:250,Unique:500,Legendary:1000}}, dng:state.dng||null, mainStat:state.mainStat, userJob:state.userJob, charClass:state.charClass, inspLv:state.inspLv, checks:state.checks, celebrated:state.celebrated, scanLog:state.scanLog.slice(-500), sockScanLog:state.sockScanLog.slice(-500), sockItems:state.sockItems.map(a=>a.map(i=>({lines:i.lines}))), items:state.items.map(a=>a.map(i=>({lines:i.lines,sockets:i.sockets||null,prismatic:!!i.prismatic,orb:!!i.orb}))), example:state.example}));
+    if(BRIDGE && BRIDGE.notifySync) BRIDGE.notifySync();
+  }catch(e){}
+}
+const SOCK_KEYS = ['prismatic','red','green','gray','purple','blue'];
+const SOCK_LABEL = {prismatic:'Prismatic',red:'Red',green:'Green',gray:'Gray',purple:'Purple',blue:'Blue'};
+const sockChip = (c,extra='') => `<span class="chip jewel s-${c} ${extra}">${SOCK_LABEL[c]||c}</span>`;
+const sockIcon = (c,extra='') => `<span class="jicon s-${c} ${extra}" title="${SOCK_LABEL[c]||c}"></span>`;
+function evalSockets(sockets){
+  if(!sockets || !sockets.length) return null;
+  const goal = state.sockGoal || 'pris2';
+  const want = new Set(JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color.toLowerCase()));
+  if(goal==='pris2') want.add('prismatic');
+  const hits = sockets.map(c=>want.has(c));
+  const score = hits.filter(Boolean).length;
+  const hasPrism = sockets.includes('prismatic');
+  const perfect = goal==='3class' ? score===3 : (score===3 && hasPrism);
+  return {sockets, hits, score, hasPrism, perfect};
+}
+function bestSockPicks(){
+  const goal = state.sockGoal || 'pris2';
+  return SLOTS.map((_,si)=>{
+    let best=null, bestSc=-1;
+    state.sockItems[si].forEach(it=>{
+      const ev = evalSockets(it.lines);
+      const sc = ev.score*2 + (goal==='pris2' && ev.hasPrism?1:0);
+      if(sc>bestSc){ bestSc=sc; best=it; }
+    });
+    return best;
+  });
+}
+function hasDuplicate(sc){
+  if(!sc || sc.slot===null) return false;
+  if(state.focus==='sockets'){
+    if(!sc.sockets || !sc.sockets.length) return false;
+    const sig = sc.sockets.join(',');
+    return state.sockItems[sc.slot].some(it=>it.lines.join(',')===sig);
+  }
+  if(sc.lines.length!==3) return false;
+  const sig = [...sc.lines].sort().join(',');
+  if(state.focus==='both' && sc.sockets && sc.sockets.length){
+    const sSig = sc.sockets.join(',');
+    return state.items[sc.slot].some(it=>[...it.lines].sort().join(',')===sig && (it.sockets||[]).join(',')===sSig);
+  }
+  return state.items[sc.slot].some(it=>[...it.lines].sort().join(',')===sig);
+}
+function attachSocketsToExisting(p){
+  if(!p || p.slot===null || (p.job && p.job!==state.userJob) || p.lines.length!==3 || !p.sockets || !p.sockets.length) return;
+  const sig = [...p.lines].sort().join(',');
+  const match = state.items[p.slot].find(it => (!it.sockets || !it.sockets.length) && [...it.lines].sort().join(',')===sig);
+  if(!match) return;
+  match.sockets = p.sockets.slice();
+  const sockSig = p.sockets.join(',');
+  if(!state.sockItems[p.slot].some(s => s.lines.join(',')===sockSig)){
+    state.sockItems[p.slot].push(mk(p.sockets.slice()));
+  }
+  save();
+}
+function recordScan(p){
+  if(!p || p.slot===null || (p.job && p.job!==state.userJob)) return;
+  const now = Date.now();
+  if(p.lines.length===3){
+    const sig = p.slot+':'+[...p.lines].sort().join(',');
+    if(!state.scanLog.some(e=>e.sig===sig && now-e.t<60000)){
+      const ev = evalItem(p);
+      state.scanLog.push({sig, hit:ev.gain>0 && ev.after===TOTAL, t:now});
+    }
+  }
+  if(p.sockets && p.sockets.length){
+    const sSig = p.slot+':'+p.sockets.join(',');
+    if(!state.sockScanLog.some(e=>e.sig===sSig && now-e.t<60000)){
+      const se = evalSockets(p.sockets);
+      state.sockScanLog.push({sig:sSig, hit:se.perfect, t:now});
+    }
+  }
+  save();
+}
+function renderSockProbs(needSlots){
+  const goal = state.sockGoal || 'pris2';
+  const matchCount = JEWELS.filter(j=>j.main===state.mainStat).length; // 2 for STR, 1 for DEX/LUK/INT
+  const p = goal==='3class'
+    ? (needSlots / 6) * Math.pow(matchCount / 5, 3)
+    : (needSlots / 6) * Math.pow(matchCount / 5, 2);
+  const pOut = (p * 100).toFixed(2);
+  const n = state.sockScanLog.length;
+  const pCum = n ? ((1 - Math.pow(1 - p, n)) * 100).toFixed(1) : '0.0';
+  const tOut = goal==='3class'
+    ? `Chance a 3-socket drop lands on one of your ${needSlots} needed slots with 3 matching ${state.mainStat} jewels: (${needSlots}/6) × (${matchCount}/5)³ = ${pOut}%.`
+    : `Chance a 3-socket Prismatic drop lands on one of your ${needSlots} needed slots with 2 matching ${state.mainStat} jewels: (${needSlots}/6) × (${matchCount}/5)² = ${pOut}%.`;
+  const tScan = `Cumulative chance of seeing a 3/3 perfect socket drop across ${n} unique socket scans: 1 - (1 - ${pOut}%)^${n} = ${pCum}%.`;
+  return `<div class="prob-row">
+    <span class="prob-pill" title="${tOut}">By outs: <b>${pOut}%</b> (${needSlots}/6 slots)</span>
+    <span class="prob-pill" title="${tScan}">By scans: <b>${pCum}%</b> (${n} scan${n===1?'':'s'})</span>
+    ${n?`<button class="ghost" style="padding:2px 6px;font-size:11px" data-act="sock-scan-reset" title="Clear socket scan history">Reset</button>`:''}
+  </div>`;
+}
+function renderProbs(huntLen){
+  const totalCombos = SLOTS.length * 364; // 6 slots * C(14,3) distinct 3L combos
+  const goal = state.sockGoal || 'pris2';
+  const matchCount = JEWELS.filter(j=>j.main===state.mainStat).length;
+  const pSock = state.focus==='both' ? Math.pow(matchCount / 5, goal==='3class' ? 3 : 2) : 1;
+  const p = (huntLen / totalCombos) * pSock;
+  const pOut = (p * 100).toFixed(state.focus==='both' ? 3 : 2);
+  const n = state.scanLog.length;
+  const pCum = n ? ((1 - Math.pow(1 - p, n)) * 100).toFixed(state.focus==='both' ? 2 : 1) : (state.focus==='both' ? '0.00' : '0.0');
+  const tOut = state.focus==='both'
+    ? `Combined 3L + ${goal==='3class'?'3× Class':'Pris+2'} socket chance: (${huntLen}/${totalCombos}) × (${matchCount}/5)^${goal==='3class'?3:2} = ${pOut}%.`
+    : `Single-drop chance: ${huntLen} winning (slot + 3-line) combos out of ${totalCombos.toLocaleString()} possible (6 slots × 364 combos).`;
+  const tScan = `Cumulative chance of hitting a finishing drop across ${n} unique scans: 1 - (1 - ${pOut}%)^${n} = ${pCum}%. Re-hovering the same item within 1 minute is ignored.`;
+  return `<div class="prob-row">
+    <span class="prob-pill" title="${tOut}">By outs: <b>${pOut}%</b> (${huntLen}/${totalCombos}${state.focus==='both'?` × ${goal==='3class'?'3×':'P+2'}`:''})</span>
+    <span class="prob-pill" title="${tScan}">By scans: <b>${pCum}%</b> (${n} scan${n===1?'':'s'})</span>
+    ${n?`<button class="ghost" style="padding:2px 6px;font-size:11px" data-act="scan-reset" title="Clear scanned item history">Reset</button>`:''}
+  </div>`;
+}
+function renderBothSockProbs(needSlotsLen){
+  const totalCombos = SLOTS.length * 364;
+  const goal = state.sockGoal || 'pris2';
+  const matchCount = JEWELS.filter(j=>j.main===state.mainStat).length;
+  const pSock = Math.pow(matchCount / 5, goal==='3class' ? 3 : 2);
+  const p = (needSlotsLen / totalCombos) * pSock;
+  const pOut = (p * 100).toFixed(3);
+  const n = state.scanLog.length;
+  const pCum = n ? ((1 - Math.pow(1 - p, n)) * 100).toFixed(2) : '0.00';
+  const tOut = `Combined 3L + ${goal==='3class'?'3× Class':'Pris+2'} upgrade chance (must match both your needed slot's 3L lines and sockets): (${needSlotsLen}/${totalCombos}) × (${matchCount}/5)^${goal==='3class'?3:2} = ${pOut}%.`;
+  const tScan = `Cumulative chance across ${n} unique scans: 1 - (1 - ${pOut}%)^${n} = ${pCum}%.`;
+  return `<div class="prob-row">
+    <span class="prob-pill" title="${tOut}">By outs: <b>${pOut}%</b> (${needSlotsLen}/${totalCombos} × ${goal==='3class'?'3×':'P+2'})</span>
+    <span class="prob-pill" title="${tScan}">By scans: <b>${pCum}%</b> (${n} scan${n===1?'':'s'})</span>
+    ${n?`<button class="ghost" style="padding:2px 6px;font-size:11px" data-act="scan-reset" title="Clear scanned item history">Reset</button>`:''}
+  </div>`;
+}
+
+// ---------- render ----------
+const svg = d => `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
+const ICON = {
+  mage: svg('<path d="M3 13 10 6"/><path d="M12 1.5v5M9.5 4h5"/>'),
+  pirate: svg('<circle cx="8" cy="3" r="1.5"/><path d="M8 4.5V14M5 7.5h6M3 10c0 2.5 2 4 5 4s5-1.5 5-4"/>'),
+  thief: svg('<path d="M8 1.5 9.5 6.5 14.5 8 9.5 9.5 8 14.5 6.5 9.5 1.5 8 6.5 6.5Z" fill="currentColor"/>'),
+  warrior: svg('<path d="M13.5 2.5 6 10M4 8l4 4M5 11l-2.5 2.5"/>'),
+  archer: svg('<path d="M4 2q9 6 0 12M4 2v12M2 8h11M11 6l2 2-2 2"/>')
+};
+const GROUPS = [['dl','wh','reg'],['mage','pirate','thief','warrior','archer'],['crit','atk','bd','other']];
+const chip = (k,extra='') => `<span class="chip s-${k} ${ICON[k]?'has-icon':''} ${extra}">${ICON[k]||''}${NAME[k]}</span>`;
+const statBtn = k => `<button class="chip s-${k} ${ICON[k]?'has-icon':''}" id="add-stat-${k}" data-act="stat" data-k="${k}" ${k!=='other'&&state.pending.includes(k)?'disabled':''}>${ICON[k]||''}${NAME[k]}</button>`;
+function leapCalcHtml(){
+  const lp = state.leap || (state.leap = {cur:260, target:264});
+  const cur = Math.max(1, Math.min(300, +lp.cur||260));
+  const tgt = Math.max(cur, Math.min(300, +lp.target||264));
+  const miles = [260,265,270,275,280,285,290];
+  const nextMile = Math.ceil((tgt + 1) / 5) * 5;
+  const toNext = nextMile - tgt;
+  const curUnlocked = miles.filter(m => cur >= m).length;
+  const tgtUnlocked = miles.filter(m => tgt >= m).length;
+  return `<div class="calc-grid">
+    <div class="calc-box">
+      <span class="label">Pre-Leap Push</span>
+      <div class="calc-kpi ${tgt>=264?'ok':'warn'}">${tgt-cur} levels to go</div>
+      <span class="muted" style="font-size:12px">${tgt<264 ? `Recommended: push to <b>Lv. 264</b> in CW4 before leaping (+${264-tgt} more).` : 'Great spot to leap — 1 level away from or past Lv. 265.'}</span>
+    </div>
+    <div class="calc-box">
+      <span class="label">Next Lv. 5 Sacred Symbol</span>
+      <div class="calc-kpi">Lv. ${nextMile}</div>
+      <span class="muted" style="font-size:12px"><b>${toNext}</b> level${toNext===1?'':'s'} after Lv. ${tgt} · Symbols unlocked by Lv. ${tgt}: <b>${tgtUnlocked}</b> (${tgtUnlocked-curUnlocked>=0?`+${tgtUnlocked-curUnlocked}`:0} from current)</span>
+    </div>
+    <div class="calc-box">
+      <span class="label">Quanah 5-Lv Milestones</span>
+      <div class="row" style="gap:4px">${miles.map(m=>`<span class="pill ${tgt>=m?'ok':cur>=m?'ok':''}" style="padding:2px 7px;font-size:11px;opacity:${tgt>=m?1:0.55}">${m}</span>`).join('')}</div>
+      <span class="muted" style="font-size:12px">Every 5 levels in Quanah grants a Lv. 5 Sacred Symbol.</span>
+    </div>
+  </div>`;
+}
+function renderPreLeap(){
+  const all = PRELEAP.flatMap(g=>g.items);
+  const doneCount = all.filter(([k])=>state.checks[k]).length;
+  const lp = state.leap || (state.leap = {cur:260, target:264});
+  document.getElementById('tab-guide').innerHTML = `<div class="panel">
+    <div class="row spread"><h2>Pre-Leap Checklist (Challenger World 4 → Quanah)</h2>
+      <div class="row"><span class="pill ${doneCount===all.length?'ok':'short'}">${doneCount} / ${all.length} ready</span>
+        ${doneCount?`<button class="ghost" data-act="chk-reset">Reset</button>`:''}</div></div>
+    <p class="muted" style="margin:0">There is no check-in in Quanah World, and you can only leap one character. Complete these before leaping.</p>
+    <div class="chk-grid">${PRELEAP.map(g=>`<div class="chk-list"><span class="label">${g.title}</span>
+      ${g.items.map(([k,lbl,sub])=>`<label class="chk ${state.checks[k]?'done':''}">
+        <input type="checkbox" data-act="chk" data-k="${k}" ${state.checks[k]?'checked':''}>
+        <span><b>${lbl}</b><br><span class="muted" style="font-size:12.5px">${sub}</span></span></label>`).join('')}</div>`).join('')}</div>
+    <div class="row spread" style="margin-top:4px"><h2>Pre-Leap Level & Sacred Symbol Calculator</h2><span class="muted" style="font-size:12px">Every 5 levels in Quanah = Lv. 5 Sacred Symbol</span></div>
+    <div class="calc-grid">
+      <label class="calc-field">Current Level<input type="number" min="1" max="300" data-leap="cur" value="${+lp.cur||260}"></label>
+      <label class="calc-field">Planned Leap Level<input type="number" min="1" max="300" data-leap="target" value="${+lp.target||264}"></label>
+    </div>
+    <div id="leap-out">${leapCalcHtml()}</div>
+  </div>`;
+}
+function dustCalcHtml(){
+  syncItemSocketsToSockItems();
+  const d = state.dust || (state.dust = {cur:0, spare:0, per:100});
+  const totalDust = Math.max(0, (+d.cur||0) + (+d.spare||0) * (+d.per||0));
+  const picks = bestSockPicks();
+  const prismHave = picks.filter(it => it && evalSockets(it.lines).hasPrism).length;
+  const score = picks.reduce((sum, it) => sum + (it ? evalSockets(it.lines).score : 0), 0);
+  const statHave = score - prismHave;
+  const needPrism = Math.max(0, 6 - prismHave);
+  const needStat = Math.max(0, 12 - statHave);
+  const dustNeeded = needPrism * 3000 + needStat * 500;
+  const diff = totalDust - dustNeeded;
+  const canPrism = Math.floor(totalDust / 3000);
+  const canColor = Math.floor(totalDust / 500);
+  const buyPrism = Math.min(needPrism, canPrism);
+  const leftAfterPrism = totalDust - buyPrism * 3000;
+  const buyStat = Math.min(needStat, Math.floor(leftAfterPrism / 500));
+  const match = JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join(' / ');
+  return `<div class="calc-grid">
+    <div class="calc-box">
+      <span class="label">Total Available Dust</span>
+      <div class="calc-kpi">${totalDust.toLocaleString()}</div>
+      <span class="muted" style="font-size:12px">Craftable now: <b>${canPrism}</b> Prismatic (3,000) or <b>${canColor}</b> Colored (500)</span>
+    </div>
+    <div class="calc-box">
+      <span class="label">Missing from Socket Focus (${state.mainStat})</span>
+      <div class="calc-kpi">${needPrism} <span class="muted" style="font-size:13px;font-weight:500">Prismatic</span> · ${needStat} <span class="muted" style="font-size:13px;font-weight:500">${match}</span></div>
+      <span class="muted" style="font-size:12px">Total Dust needed: <b>${dustNeeded.toLocaleString()}</b> (${(needPrism*3000).toLocaleString()} + ${(needStat*500).toLocaleString()})</span>
+    </div>
+    <div class="calc-box">
+      <span class="label">Crafting Plan & Balance</span>
+      <div class="calc-kpi ${diff>=0?'ok':'warn'}">${diff>=0 ? `+${diff.toLocaleString()} surplus` : `${Math.abs(diff).toLocaleString()} short`}</div>
+      <span class="muted" style="font-size:12px">${dustNeeded===0 ? 'All 6 Prismatic + 12 matching sockets covered!' : `Can craft <b>${buyPrism}/${needPrism}</b> Prismatic + <b>${buyStat}/${needStat}</b> ${match} right now.`}</span>
+    </div>
+  </div>`;
+}
+const GEM_TIERS = [
+  {t:'Normal', c:'#9ca3af', defExp:50, defDust:50},
+  {t:'Rare', c:'#60a5fa', defExp:150, defDust:100},
+  {t:'Epic', c:'#a78bfa', defExp:400, defDust:250},
+  {t:'Unique', c:'#fbbf24', defExp:1000, defDust:500},
+  {t:'Legendary', c:'#34d399', defExp:2500, defDust:1000}
+];
+function getGemExpState(){
+  if(!state.gemExp) state.gemExp = {curExp:0, targetExp:1000, fodderTier:'Rare', tierExp:{Normal:50,Rare:150,Epic:400,Unique:1000,Legendary:2500}, tierDust:{Normal:50,Rare:100,Epic:250,Unique:500,Legendary:1000}};
+  if(!state.gemExp.tierExp) state.gemExp.tierExp = {Normal:50,Rare:150,Epic:400,Unique:1000,Legendary:2500};
+  if(!state.gemExp.tierDust) state.gemExp.tierDust = {Normal:50,Rare:100,Epic:250,Unique:500,Legendary:1000};
+  return state.gemExp;
+}
+function gemExpCalcHtml(){
+  const g = getGemExpState(), d = state.dust || {cur:0,spare:0,per:100};
+  const totalDust = Math.max(0, (+d.cur||0) + (+d.spare||0) * (+d.per||0));
+  const remExp = Math.max(0, (+g.targetExp||0) - (+g.curExp||0));
+  const tier = GEM_TIERS.find(x=>x.t===g.fodderTier) || GEM_TIERS[1];
+  const expPerGem = Math.max(1, +g.tierExp[tier.t] || tier.defExp);
+  const dustPerGem = Math.max(0, +g.tierDust[tier.t] || tier.defDust);
+  const gemsNeeded = Math.ceil(remExp / expPerGem);
+  const dustEquiv = gemsNeeded * dustPerGem;
+  const gemsFromDust = Math.floor(totalDust / 500);
+  const dustShort = Math.max(0, gemsNeeded * 500 - totalDust);
+  return `<div class="calc-grid">
+    <div class="calc-box">
+      <span class="label">Remaining EXP Needed</span>
+      <div class="calc-kpi">${remExp.toLocaleString()}</div>
+      <span class="muted" style="font-size:12px">Feeding <b>${tier.t}</b> gems (${expPerGem.toLocaleString()} EXP each)</span>
+    </div>
+    <div class="calc-box">
+      <span class="label">Approx. Gems Needed</span>
+      <div class="calc-kpi ${gemsNeeded===0?'ok':''}">${gemsNeeded.toLocaleString()} <span class="muted" style="font-size:13px;font-weight:500">${tier.t}</span></div>
+      <span class="muted" style="font-size:12px">Extract value: ~<b>${dustEquiv.toLocaleString()}</b> Dust (${dustPerGem} ea)</span>
+    </div>
+    <div class="calc-box">
+      <span class="label">Vs. Current Stardust (${totalDust.toLocaleString()})</span>
+      <div class="calc-kpi ${dustShort===0?'ok':'warn'}">${dustShort===0?'Covered by Dust':`${dustShort.toLocaleString()} Dust short`}</div>
+      <span class="muted" style="font-size:12px">Current Dust buys <b>${gemsFromDust}</b> Colored (500 ea) · Need <b>${Math.max(0,gemsNeeded-gemsFromDust)}</b> more</span>
+    </div>
+  </div>`;
+}
+function renderJewels(){
+  const match = JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join(' / ');
+  const prismCount = state.items.flat().filter(i=>i.prismatic).length;
+  const d = state.dust || (state.dust = {cur:0, spare:0, per:100});
+  const g = getGemExpState();
+  document.getElementById('tab-guide').innerHTML = `<div class="panel">
+    <div class="row spread"><h2>Jewels & Sockets</h2>
+      <div class="row"><span class="label">Your Main Stat</span>
+        <div class="seg">${['STR','DEX','LUK','INT'].map(st=>`<button data-act="mstat" data-s="${st}" aria-pressed="${state.mainStat===st}">${st}</button>`).join('')}</div>
+      </div>
+    </div>
+    <div class="note-box">Best jewel color for <b>${state.mainStat}</b>: <b>${match}</b>. You currently have <b>${prismCount}</b> piece${prismCount===1?'':'s'} tagged with a 💎 Prismatic socket.</div>
+    <table class="jtable"><thead><tr><th>Jewel Color</th><th>Attack Stat</th><th>Main Stat</th><th>Secondary Stat</th></tr></thead>
+      <tbody>${JEWELS.map(j=>`<tr class="${j.main===state.mainStat?'match':''}"><td><span class="jdot" style="background:${j.hex}"></span>${j.color}</td><td>${j.atk}</td><td>${j.main}</td><td>${j.sec}</td></tr>`).join('')}</tbody>
+    </table>
+    <div class="row spread" style="margin-top:4px"><h2>Jewel Dust & Crafting Calculator</h2><span class="muted" style="font-size:12px">Colored = 500 Dust · Prismatic = 3,000 Dust</span></div>
+    <div class="calc-grid">
+      <label class="calc-field">Current Jewel Dust<input type="number" min="0" step="50" data-dust="cur" value="${+d.cur||0}"></label>
+      <label class="calc-field">Spare Jewels to Extract<input type="number" min="0" step="1" data-dust="spare" value="${+d.spare||0}"></label>
+      <label class="calc-field">Dust per Extracted Jewel<input type="number" min="0" step="10" data-dust="per" value="${d.per!==undefined?+d.per:100}"></label>
+    </div>
+    <div id="dust-out">${dustCalcHtml()}</div>
+    <div class="row spread" style="margin-top:4px"><h2>Gem Tier List & Leveling EXP Estimator</h2>
+      <div class="seg">${GEM_TIERS.map(x=>`<button data-act="gtier" data-t="${x.t}" aria-pressed="${g.fodderTier===x.t}">${x.t}</button>`).join('')}</div>
+    </div>
+    <table class="jtable"><thead><tr><th>Gem Tier</th><th>EXP per Gem</th><th>Extract Dust</th><th>Est. Gems for Remaining EXP</th></tr></thead>
+      <tbody>${GEM_TIERS.map(x=>{
+        const ev = Math.max(1, +g.tierExp[x.t]||x.defExp), dv = Math.max(0, +g.tierDust[x.t]||x.defDust);
+        const rem = Math.max(0, (+g.targetExp||0)-(+g.curExp||0));
+        return `<tr class="${g.fodderTier===x.t?'match':''}">
+          <td><span class="jdot" style="background:${x.c}"></span>${x.t}</td>
+          <td><input type="number" min="1" step="10" data-gexp="tierExp.${x.t}" value="${ev}" style="width:90px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit"></td>
+          <td><input type="number" min="0" step="10" data-gexp="tierDust.${x.t}" value="${dv}" style="width:90px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit"></td>
+          <td id="grem-${x.t}">${Math.ceil(rem/ev).toLocaleString()} gems</td></tr>`;
+      }).join('')}</tbody>
+    </table>
+    <div class="calc-grid">
+      <label class="calc-field">Current Gem EXP<input type="number" min="0" step="50" data-gexp="curExp" value="${+g.curExp||0}"></label>
+      <label class="calc-field">Target Level Total EXP<input type="number" min="0" step="50" data-gexp="targetExp" value="${+g.targetExp||1000}"></label>
+    </div>
+    <div id="gexp-out">${gemExpCalcHtml()}</div>
+    ${renderFdBox(solve(state.items))}
+    <div class="chk-grid">
+      <div class="note-box"><b>Prismatic (+4+) Rule:</b> Hologram lines cap at Lv. 3 from Libae gear. A Prismatic Jewel with +1 hologram skill only raises a line past Lv. 3 if it matches a line on your equipped armor. Maxed colored jewels grant up to <b>+300 Main Stat</b> & <b>+100 ATK/MATT</b>.</div>
+      <div class="note-box"><b>Extracting & Safety Tip:</b> Socketing any jewel into a 3L piece protects it from the <b>"All"</b> extraction filter so you don't accidentally melt it. Orbs from the dungeon let you transfer lines onto better-socketed gear later.</div>
+    </div>
+  </div>`;
+}
+const DUNGEON_CODES = [
+  {id:'overclocked', name:'Overclocked Fusion', combo:true, req:['broken_heart','creaking_limb','overheated_head'], syn:['Broken Heart','Creaking Limb','Overheated Head'], desc:'Combo transformation formed by collecting Broken Heart + Creaking Limb + Overheated Head (pick Overheated Head LAST).'},
+  {id:'broken_heart', name:'Broken Heart', stars:1, combo:true, partOf:'Overclocked Fusion', syn:['Creaking Limb','Overheated Head','Overclocked Fusion'], desc:'Increases exclusive potion recovery by 30%, Damage taken +10%. Priority 1/3 for Overclocked Fusion.'},
+  {id:'creaking_limb', name:'Creaking Limb', stars:1, combo:true, partOf:'Overclocked Fusion', syn:['Broken Heart','Overheated Head','Overclocked Fusion'], desc:'Attack Power & Magic ATT: +20, Speed: -20. Priority 2/3 for Overclocked Fusion.'},
+  {id:'overheated_head', name:'Overheated Head', stars:1, combo:true, partOf:'Overclocked Fusion', syn:['Broken Heart','Creaking Limb','Overclocked Fusion'], desc:'Upon entering a floor, obtain 10 Bytes. 20% chance to remove 1 owned program (including itself!). NEVER pick first — pick LAST after Broken Heart & Creaking Limb.'},
+  {id:'quality_assurance', name:'Quality Assurance', stars:1, masterLv:3, desc:'Increases Final Damage by 3% every 10 sec you are not hit, stacking up to 5 times (+15% FD). Resets when hit.'},
+  {id:'return_protocol', name:'Return Protocol', stars:2, desc:'When used, immediately bypasses the Break Map and exits the dungeon with all rewards claimed. Disappears after use.'},
+  {id:'black_box', name:'Black Box', stars:2, desc:'Immediately grants 3 random programs and removes 2 owned programs at random (re-activates if obtained again). Avoid while holding Overclocked Fusion pieces!'},
+  {id:'overclock_core', name:'Overclock Core', stars:1, masterLv:3, desc:'Increases Final Damage by 8/10/12% and increases Damage Taken by 5/10/15% (by Lv. 1/2/3).'},
+  {id:'hard_reset', name:'Hard Reset', stars:3, desc:'Upon obtaining, deletes all installed programs and increases Final Damage by 5% per deleted program (re-activates if obtained again). Avoid while holding Overclocked Fusion pieces!'},
+  {id:'strangler_fig', name:'Strangler Fig Pattern', stars:1, masterLv:3, desc:'Upon defeating monsters, recovers 5% HP with a 20/40/60% chance (by Lv. 1/2/3).'},
+  {id:'emergency_backup', name:'Emergency Backup', stars:3, masterLv:3, desc:'If HP falls below 30%, instantly recovers 20/30/70% of max HP (by Lv. 1/2/3). Cooldown: 120 sec.'},
+  {id:'one_coin', name:'One Coin', stars:3, desc:'Max HP fixed at 50%, but Final Damage increased by 30%.'},
+  {id:'type_w_projection', name:'Type-W Projection', aliases:['Type-W Project'], combo:true, projectGroup:true, syn:['Type-W Jailbreak'], desc:'When attacking with a Hologram skill, a projected warrior activates Warrior hologram skills.'},
+  {id:'type_m_projection', name:'Type-M Projection', aliases:['Type-M Project'], stars:2, combo:true, projectGroup:true, syn:['Type-M Jailbreak'], desc:'When attacking an enemy with a Hologram skill, a projected magician uses [Hologram] Bolt Barrage and activates [Hologram] Format.'},
+  {id:'type_b_projection', name:'Type-B Projection', aliases:['Type-B Project'], combo:true, projectGroup:true, syn:['Type-B Jailbreak'], desc:'When attacking with a Hologram skill, a projected bowman activates Bowman hologram skills.'},
+  {id:'type_p_projection', name:'Type-P Projection', aliases:['Type-P Project'], combo:true, projectGroup:true, syn:['Type-P Jailbreak'], desc:'When attacking with a Hologram skill, a projected pirate activates Pirate hologram skills.'},
+  {id:'type_t_projection', name:'Type-T Projection', aliases:['Type-T Project'], combo:true, projectGroup:true, syn:['Type-T Jailbreak'], desc:'When attacking with a Hologram skill, a projected thief activates Thief hologram skills.'},
+  {id:'type_w_jailbreak', name:'Type-W Jailbreak', stars:2, combo:true, syn:['Type-W Projection'], desc:'Projected Warrior [Hologram] Worldreaver Damage increased by 10/20/30% (Lv. 1/2/3). Does NOT replace other Jailbreaks.'},
+  {id:'type_m_jailbreak', name:'Type-M Jailbreak', stars:2, combo:true, syn:['Type-M Projection'], desc:'Projected Magician [Hologram] Bolt Barrage Damage increased by 10/20/30% (Lv. 1/2/3). Does NOT replace other Jailbreaks.'},
+  {id:'type_b_jailbreak', name:'Type-B Jailbreak', combo:true, syn:['Type-B Projection'], desc:'Projected Bowman Hologram skill Damage increased by 10/20/30% (Lv. 1/2/3). Does NOT replace other Jailbreaks.'},
+  {id:'type_p_jailbreak', name:'Type-P Jailbreak', combo:true, syn:['Type-P Projection'], desc:'Projected Pirate Hologram skill Damage increased by 10/20/30% (Lv. 1/2/3). Does NOT replace other Jailbreaks.'},
+  {id:'type_t_jailbreak', name:'Type-T Jailbreak', combo:true, syn:['Type-T Projection'], desc:'Projected Thief Hologram skill Damage increased by 10/20/30% (Lv. 1/2/3). Does NOT replace other Jailbreaks.'},
+  {id:'data_compression', name:'Data Compression', stars:2, desc:'Increases EXP Obtained by 10/20/30/40%.'},
+  {id:'wild_pointer', name:'Wild Pointer', stars:1, desc:'Immediately obtain 50 Bytes upon pick up.'},
+  {id:'entropy', name:'Entropy', stars:3, desc:'Increases Final Damage by 50%. Upon entering a floor, 30% chance to stack [Disorder] once; 3 stacks exits the dungeon automatically.'},
+  {id:'backspace', name:'Backspace', stars:2, desc:'10/20/30% chance for skill cooldowns to reset immediately (Lv. 1/2/3).'},
+  {id:'debuggy', name:'Debuggy', masterLv:1, desc:'Single-use revive: upon death, revives at 100% HP and disappears after activation.'}
+];
+const DNG_MODIFIERS = {
+  buffs: [
+    ['Swift Attack','Increases attack speed by 1 level.'],
+    ['Quickdraw','Decreases skill cooldowns by 5%.'],
+    ['Recovery Marble','Every 3 mob kills drops a marble that must be manually picked up to heal 10% HP.']
+  ],
+  detriments: [
+    ['Frenzy','Increases enemy movement/attack speed.'],
+    ['Divine Punishment','Lightning strikes to attack during the floor.'],
+    ['Vision Restriction','Restricts map vision during combat.'],
+    ['Chaser','An enemy chases you during the floor.'],
+    ['Blood for Blood','+20% damage taken when HP is above 50%; -20% damage taken when HP is below 50%.']
+  ]
+};
+const DNG_VISUALS = [
+  { group: '1. Entry, HUD & Inventory', items: [
+    ['docs/dungeon/portal-entry.jpg','Entry / Exit Portal','White/black swirl portal used to enter or exit the dungeon.'],
+    ['docs/dungeon/hud-items.png','Inventory & Weekly Bar','Weekly Power bar, Bytes (50), Storage/Programs buttons, and Slots 1–4: (1) Potion, (2) Dummy Mapae (enemy bind), (3) Garbage Collection (invincible), (4) Desynced Timer (resets CD of 5th job & below).'],
+    ['docs/dungeon/programs-inv.png','Programs Inventory','Shows owned programs (up to 30 slots). Open in-game to sync owned codes.'],
+    ['docs/dungeon/program-tooltip.png','Program Tooltip','Shows Master Level, current level effect, and next level effect.'],
+    ['docs/dungeon/dungeon-storage.png','Dungeon Storage (Empty 0/240)','Holds looted gear & rewards during your run.'],
+    ['docs/dungeon/dungeon-storage-full.jpg','Dungeon Storage (With Loot)','Holds Quanah Crystals, Hologram gear, Buffs, EXP/VIP coupons, Symbol Selectors, and Jewels.'],
+    ['docs/dungeon/red-jewel.jpg','Red Jewel Drop','Double-click to obtain a Red Jewel (also drops in Green, Gray, Purple, Blue, and Prismatic).']
+  ]},
+  { group: '2. Portals & Room Flow', items: [
+    ['docs/dungeon/portal-mob.jpg','Regular Mob Portal','Red portal with a single sword icon — enters a combat mob room.'],
+    ['docs/dungeon/portal-survival.jpg','Regular Survival Portal','Red portal with crossed daggers — enters a survival room.'],
+    ['docs/dungeon/portal-event.jpg','Random / Event Portal','Blue ? portal that leads to a random Encounter event.'],
+    ['docs/dungeon/portal-boss.jpg','Boss Map Portal','Red horned-boss portal leading to a floor boss.'],
+    ['docs/dungeon/portal-boss-reward.jpg','Boss Reward Portal','Blue gift-box portal that appears after defeating a boss.']
+  ]},
+  { group: '3. Floor Banners, Timers, Buffs & Detriments', items: [
+    ['docs/dungeon/sector-hud.jpg','Sector, Floor & Timer HUD','Top bar showing active buffs/detriments, node progress, Sector/Floor (Sector1 F1), room type (Survive), and Time Left.'],
+    ['docs/dungeon/room-banner.jpg','Room Entry Banner','Shows Floor #, objective, and active modifiers: Blue = Buff (Swift Attack), Red = Detriment (Frenzy).'],
+    ['docs/dungeon/buff-swift-frenzy.png','Buffs & Detriments Icons','Blue = Swift Attack (+1 att speed), Red = Frenzy (increases enemy speed).'],
+    ['docs/dungeon/survival-chaser.jpg','Survival Timer & Chaser Debuff','Pink countdown timer (00:11) below the clock alongside the red Chaser debuff icon.'],
+    ['docs/dungeon/debuff-chaser.png','Chaser Debuff Icon','Red crosshair debuff — an enemy chases you during the floor.'],
+    ['docs/dungeon/detriment-lightning.png','Detriment: Divine Punishment','Red detriment icon — Lightning strikes to attack during the floor.'],
+    ['docs/dungeon/banner-vision.png','Vision Restriction Banner','Combat floor with Vision Restriction detriment active.'],
+    ['docs/dungeon/debuff-vision.png','Vision Restriction Icon','Red debuff icon next to the dungeon map.']
+  ]},
+  { group: '4. NPCs, Programs, Encounters & Shop', items: [
+    ['docs/dungeon/simulation-console.jpg','Simulation Console NPC','Talk to this console in regular rooms to open Select Code.'],
+    ['docs/dungeon/select-code.jpg','Select Code Menu','Pick 1 of 3 offered programs (or Reroll). Scanner reads & recommends here.'],
+    ['docs/dungeon/code-emergency-backup.png','Code Card Example (Emergency Backup)','Example 3★ code card showing tier stars and level scaling.'],
+    ['docs/dungeon/encounter-banner.png','Encounter Banner','Banner shown when entering a Random / Event portal.'],
+    ['docs/dungeon/encounter-gamble.png','Byte Gamble Encounter','Bet a few bytes (<15) or a lot (30) for a chance at items, EXP, or nothing.'],
+    ['docs/dungeon/shop-ui.png','Dungeon Shop','Spend Bytes on Programs, Supply, and Special Sale items.']
+  ]},
+  { group: '5. Monsters, Bosses & Run Exit / Results', items: [
+    ['docs/dungeon/simulated-mob.png','Simulated Monsters','Dungeon enemies inside Combat and Survival rooms.'],
+    ['docs/dungeon/boss-mushmom.jpg','Mushmom (Mid-Sector Boss, Fl. 5/15/25)','Mid-sector boss encounter; opens exit/continue portals (no loot chest).'],
+    ['docs/dungeon/boss-floor10.jpg','Floor 10 Boss (End-of-Sector Boss)','Sector-end boss (Fl. 10/20/30); spawns Boss Reward Chest + exit/continue portals.'],
+    ['docs/dungeon/boss-reward-chest.jpg','Boss Reward Chest','Loot chest spawned after defeating an end-of-sector boss (Fl. 10/20/30).'],
+    ['docs/dungeon/exit-room.jpg','Post-Boss Exit / Continue Room','Exit portal on the left, I-BA in the center, and next combat portal on the right.'],
+    ['docs/dungeon/exit-gap-in-grid.jpg','Exit Dungeon (Gap in the Grid)','Talk to I-BA (Dungeon Guide) when ready to leave the dungeon.'],
+    ['docs/dungeon/allotment-cards.png','Allotment Cards Reward','I-BA grants Allotment Cards upon exiting (check Inventory after exit).'],
+    ['docs/dungeon/results-extracted.png','Results Screen (Extracted)','Shows Sector Reached, Programs Used, Items Retrieved, and Weekly Progress.'],
+    ['docs/dungeon/weekly-power.png','Weekly Projected Power','Shows remaining Weekly Projected Power (e.g. 102 / 150) at run end.']
+  ]}
+];
+const HIDDEN_FILES = [
+  ['patchless','Patchless','+1 exclusive potion upon starting'],
+  ['future','from __future__ import','Entering a floor with ≤30% HP fully heals HP (×1 per round)'],
+  ['heavy_pockets','Heavy Pockets','Grants 1 program upon starting'],
+  ['yolo','You Only Live Once','Byte +50 upon starting'],
+  ['that_aint_it',"That Ain't It",'Hidden file perk (undiscovered in sample)'],
+  ['untitled','Untitled','1% chance to restore all items upon run failure']
+];
+const DIM_MISSIONS = [
+  ['lv15','Reach Inspector Lv. 15','Round',100],['lv20','Reach Inspector Lv. 20','Round',200],
+  ['lv25','Reach Inspector Lv. 25','Round',300],['lv30','Reach Inspector Lv. 30','Round',400],
+  ['lv35','Reach Inspector Lv. 35','Round',500],['lv40','Reach Inspector Lv. 40','Round',600],
+  ['lv45','Reach Inspector Lv. 45','Round',700],['lv50','Reach Inspector Lv. 50','Round',800],
+  ['lv55','Reach Inspector Lv. 55','Round',1000]
+];
+const DIM_SKILLS = [
+  ['Inspector Acumen','Passive','Normal–Legendary','Example: STR +4% (scales by tier & level).'],
+  ["Inspector's Howling Gale",'Active','Normal–Legendary','Summons 2 ferocious gusts that continuously target the highest-Max-HP boss and reduce defense/HP.']
+];
+const MAPAE_MODULES = [
+  ['Power Module','Red','Active Skill Appearance Rate (+5% per Lv, e.g. Lv. 30 = +150%)'],
+  ['Survival Module','Blue','Passive Skill Appearance Rate (+5% per Lv, e.g. Lv. 19 = +95%)'],
+  ['Efficiency Module','Green','Damage to Normal Monsters (+5% per Lv, e.g. Lv. 30 = +150%)']
+];
+const DNG_BUFFS = [
+  ['syram',"Syram's / Merchant Buff",'Quanah Merchant or dungeon drop'],
+  ['fatigue','Fatigue Recovery Potion','Dailies & Proving Grounds mobs'],
+  ['prof2x','2× Potion (Profession)','Requires Professions before leaping'],
+  ['exp_drop','EXP / Drop Consumables','VIP stats, Blue sparkling star, Gold pot'],
+  ['guild_echo',"Guild / Hero's Echo",'Non-conflicting combat buffs']
+];
+function getDng(){
+  if(!state.dng) state.dng = {};
+  const d = state.dng;
+  if(!d.sub) d.sub = 'glossary';
+  if(typeof d.q!=='string') d.q = '';
+  if(!d.files) d.files = {};
+  if(!d.missions) d.missions = {};
+  if(!d.buffs) d.buffs = {};
+  if(!Array.isArray(d.ownedCodes)) d.ownedCodes = [];
+  if(!Array.isArray(d.offeredCodes)) d.offeredCodes = [];
+  if(typeof d.weeklyPower!=='number') d.weeklyPower = 150;
+  if(typeof d.weeklyMax!=='number') d.weeklyMax = 150;
+  if(typeof d.drainPerRoom!=='number') d.drainPerRoom = 5;
+  if(typeof d.roomsEntered!=='number') d.roomsEntered = 0;
+  return d;
+}
+function recommendCode(offered, owned, fused){
+  const has = id => owned.includes(id);
+  const isFused = fused || (has('broken_heart') && has('creaking_limb') && has('overheated_head'));
+  if(!isFused){
+    if(offered.includes('broken_heart') && !has('broken_heart')) return {pick:'broken_heart', reason:'Priority 1/3 for Overclocked Fusion'};
+    if(offered.includes('creaking_limb') && !has('creaking_limb')) return {pick:'creaking_limb', reason:'Priority 2/3 for Overclocked Fusion'};
+    if(offered.includes('overheated_head')){
+      if(has('broken_heart') && has('creaking_limb')) return {pick:'overheated_head', reason:'3/3 ready — completes Overclocked Fusion!'};
+      const safeAlt = offered.find(id => id!=='overheated_head' && id!=='black_box' && id!=='hard_reset');
+      return safeAlt
+        ? {pick:safeAlt, reason:'Skip Overheated Head (need Heart & Limb first)'}
+        : {pick:null, warn:'Skip Overheated Head — get Broken Heart & Creaking Limb first!'};
+    }
+  }
+  for(const [p,j] of [['type_w_projection','type_w_jailbreak'],['type_m_projection','type_m_jailbreak'],['type_b_projection','type_b_jailbreak'],['type_p_projection','type_p_jailbreak'],['type_t_projection','type_t_jailbreak']]){
+    if(has(p) && offered.includes(j) && !has(j)) return {pick:j, reason:`Synergizes with owned ${p.replace('_projection','').replace('type_','Type-').toUpperCase()} Projection`};
+  }
+  const safeOrder = ['one_coin','overclock_core','quality_assurance','backspace','debuggy','type_w_projection','type_m_projection','type_b_projection','type_p_projection','type_t_projection','type_w_jailbreak','type_m_jailbreak','type_b_jailbreak','type_p_jailbreak','type_t_jailbreak','data_compression','emergency_backup','strangler_fig','wild_pointer','return_protocol'];
+  const ownedProj = owned.find(id => (DUNGEON_CODES.find(c=>c.id===id)||{}).projectGroup);
+  for(const id of safeOrder){
+    if(offered.includes(id) && !has(id)){
+      const meta = DUNGEON_CODES.find(c=>c.id===id)||{};
+      const swapNote = meta.projectGroup && ownedProj ? ` (will swap out ${ownedProj})` : '';
+      return {pick:id, reason:(isFused?'Overclocked Fusion complete — strong pick':'Safe high-value program')+swapNote};
+    }
+  }
+  const risky = new Set(['black_box','hard_reset','entropy']);
+  const fresh = offered.find(id => !has(id) && !risky.has(id)) || offered.find(id => !has(id));
+  if(fresh) return {pick:fresh, reason:fresh==='entropy'?'Caution: +50% FD, but 3 Disorder stacks auto-exit':fresh==='hard_reset'?'Caution: deletes all installed programs (+5% FD each)':fresh==='black_box'?'Caution: removes 2 random owned programs':'Not yet owned'};
+  return {pick:offered[0]||null, reason:'All offered already owned (consider Reroll)'};
+}
+function parseDungeonOcr(text){
+  const t = String(text||'');
+  const isSelect = /select\s*code|reroll/i.test(t);
+  const isShop = /\bshop\b[\s\S]{0,60}\bbytes\b|special\s*sale/i.test(t);
+  const isInv = /programs?\b[\s\S]{0,40}slot\s*\d+\s*\/\s*30|owned\s*programs?|program\s*inventory/i.test(t);
+  const found = DUNGEON_CODES.filter(c => [c.name,...(c.aliases||[])].some(n => new RegExp(n.replace(/[-\s]+/g,'[-\\s]*'),'i').test(t))).map(c=>c.id);
+  const secM = t.match(/sector\s*(\d+)\s*f\s*(\d+)/i);
+  const flM = t.match(/\bfloor\s*(\d+)\b/i);
+  const roomM = t.match(/\b(survive|survival|defeat\s*all\s*monsters|encounter|mushmom|extracted|gap in the grid|combat|boss)\b/i);
+  const wpM = t.match(/weekly\s*projected\s*power\s*(\d+)\s*\/\s*(\d+)/i);
+  const allotM = t.match(/allotment\s*card\s*x?\s*(\d+)/i);
+  const buffs = [];
+  if(/swift\s*attack/i.test(t)) buffs.push('Swift Attack (+1 att speed)');
+  if(/quickdraw/i.test(t)) buffs.push('Quickdraw (-5% CD)');
+  if(/recovery\s*marble/i.test(t)) buffs.push('Recovery Marble (10% HP orb every 3 kills)');
+  const detriments = [];
+  if(/divine\s*punishment|lightning\s*strikes/i.test(t)) detriments.push('Divine Punishment (Lightning)');
+  if(/\bfrenzy\b/i.test(t)) detriments.push('Frenzy (Enemy speed up)');
+  if(/vision\s*restriction/i.test(t)) detriments.push('Vision Restriction');
+  if(/\bchaser\b/i.test(t)) detriments.push('Chaser (Enemy chases you)');
+  if(/blood\s*for\s*blood/i.test(t)) detriments.push('Blood for Blood (+20% dmg >50% HP / -20% <50% HP)');
+  if(/\bdisorder\b/i.test(t)) detriments.push('Disorder (3 stacks = auto-exit)');
+  const encounter = /test your luck with a few bytes|bet a lot of bytes/i.test(t) ? 'Byte Gamble (sub 15 / 30 bytes)'
+    : isShop ? 'Dungeon Shop (Bytes)'
+    : allotM ? `Allotment Card x${allotM[1]}` : '';
+  return {
+    isSelect, isShop, isInv, found,
+    sector: secM ? `Sector ${secM[1]} F${secM[2]}` : (flM ? `Floor ${flM[1]}` : ''),
+    roomType: roomM ? (/defeat/i.test(roomM[1]) ? 'Combat' : /extracted/i.test(roomM[1]) ? 'Results' : /gap/i.test(roomM[1]) ? 'Exit' : roomM[1]) : '',
+    weeklyPower: wpM ? +wpM[1] : null,
+    weeklyMax: wpM ? +wpM[2] : null,
+    buffs, detriments, encounter
+  };
+}
+const PROJ_SWAP_NOTE = 'Only 1 Type-* Projection can be held at a time; choosing another swaps your current Type-W/M/B/P/T Projection.';
+function dngGlossaryHtml(q){
+  const s = (q||'').trim().toLowerCase();
+  const list = DUNGEON_CODES.filter(c => !s || c.name.toLowerCase().includes(s) || c.desc.toLowerCase().includes(s) || (c.syn||[]).some(x=>x.toLowerCase().includes(s)));
+  return list.length ? list.map(c=>`<div class="note-box" ${c.projectGroup?`title="${PROJ_SWAP_NOTE}"`:''}>
+    <div class="row spread"><b>${c.name}</b><div class="row" style="gap:4px">${c.combo?`<span class="pill ok">COMBO${c.partOf?` → ${c.partOf}`:''}</span>`:''}</div></div>
+    <div style="margin-top:4px">${c.desc}</div>
+    ${c.syn&&c.syn.length?`<div class="muted" style="font-size:12px;margin-top:4px">Synergizes with: <b>${c.syn.join(', ')}</b></div>`:''}
+    ${c.projectGroup?`<div class="muted" style="font-size:11.5px;margin-top:4px;border-top:1px solid var(--line);padding-top:4px">${PROJ_SWAP_NOTE}</div>`:''}
+  </div>`).join('') : `<div class="note-box muted">No matching programs/codes found.</div>`;
+}
+function renderDungeon(){
+  const d = getDng();
+  const rooms = [
+    ['Room 1 — Combat (Always)', 'Always a combat room; clear for early gear & materials.'],
+    ['Rooms 2–4 — Randomized', 'Combat rooms, Event/NPC Select Code rooms, or Shop/Rest rooms. Prioritize Combat rooms early for Libae gear & crystals.'],
+    ['Room 5 — Boss Room', 'Defeat the floor boss and check Dungeon Storage right after; leave early if you looted a major upgrade.']
+  ];
+  const dLoot = ['Quanah Crystals','Hologram & upgraded Hologram items','Jewels (for armor sockets)','Eternal armor boxes','Ring boxes','Mapae fragments (Inspector Badge)','Potential scrolls','Sol Erda & fragments','Nodestones','Symbol selectors','Silver / Gold Boss Entry Tickets'];
+  const subs = [['glossary','Programs Glossary'],['rooms','Rooms & Sectors'],['loot','Bosses & Loot'],['missions','Missions & Files'],['skills','Skills & Mapae']];
+  let body = '';
+  if(d.sub==='glossary'){
+    body = `<div class="row spread"><span class="muted" style="font-size:12.5px">Search programs, combo pieces, and synergies (more added as discovered).</span>
+      <input type="search" data-dng-q placeholder="Search programs/codes..." value="${d.q.replace(/"/g,'&quot;')}" style="background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:6px 10px;color:var(--fg);font:inherit;min-width:220px"></div>
+      <div id="dng-gloss" class="chk-grid">${dngGlossaryHtml(d.q)}</div>`;
+  } else if(d.sub==='rooms'){
+    body = `<div class="chk-grid">${rooms.map(([t,desc])=>`<div class="note-box"><b>${t}</b><br>${desc}</div>`).join('')}</div>
+      <div class="chk-grid">
+        <div class="note-box"><b>Sectors, Floors & Portals:</b> Progress through Sectors (e.g. <code>Sector1 F1</code>) across Combat (single sword portal) & Survival (crossed daggers portal) rooms. Talk to the <b>Simulation Console</b> NPC in regular rooms for <b>Select Code</b>. <b>Clear Effect:</b> Cleared sectors grant <b>+50% more EXP</b>.</div>
+        <div class="note-box"><b>Active Bar & Detriments:</b> (1) Exclusive Potion · (2) <b>Dummy Mapae</b> (enemy bind) · (3) <b>Garbage Collection</b> (invincible) · (4) <b>Desynced Timer</b> (resets CD of 5th job & below). <b>Familiar drop rate does NOT work inside the dungeon.</b></div>
+      </div>
+      <div class="chk-grid">
+        <div class="note-box"><b>Floor Buffs (Blue)</b><ul style="margin:6px 0 0;padding-left:18px">${DNG_MODIFIERS.buffs.map(([n,ef])=>`<li><b>${n}</b> — ${ef}</li>`).join('')}</ul></div>
+        <div class="note-box" style="border-color:var(--warn)"><b>Floor Detriments (Red)</b><ul style="margin:6px 0 0;padding-left:18px">${DNG_MODIFIERS.detriments.map(([n,ef])=>`<li><b>${n}</b> — ${ef}</li>`).join('')}</ul></div>
+      </div>
+      ${DNG_VISUALS.map(g=>`<span class="label" style="margin-top:8px">${g.group}</span>
+        <div class="chk-grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">${g.items.map(([src,title,desc])=>`<div class="note-box" style="display:flex;flex-direction:column;gap:6px">
+          <img src="${src}" alt="${title}" loading="lazy" style="width:100%;max-height:150px;object-fit:contain;border-radius:6px;background:var(--surface)">
+          <b>${title}</b><span class="muted" style="font-size:12px">${desc}</span></div>`).join('')}</div>`).join('')}`;
+  } else if(d.sub==='loot'){
+    body = `<div class="chk-grid">
+        <div class="note-box"><b>Dungeon Bosses</b><ul style="margin:6px 0 0;padding-left:18px"><li><b>Mid-Sector Bosses (Floors 5, 15, 25, ... — e.g. Mushmom)</b> — Encountered through the red Boss Map Portal; shows portals to exit or continue further into the rooms (no loot chest).</li><li><b>End-of-Sector Bosses (Floors 10, 20, 30, ...)</b> — Final boss of each sector; <b>only these spawn the Boss Reward Chest</b> (loot boxes) along with the exit and continue portals.</li></ul></div>
+        <div class="note-box"><b>Dungeon Loot</b><ul style="margin:6px 0 0;padding-left:18px">${dLoot.map(x=>`<li>${x}</li>`).join('')}</ul></div>
+      </div>`;
+  } else if(d.sub==='missions'){
+    const fileDone = HIDDEN_FILES.filter(([k])=>d.files[k]).length;
+    const mScore = DIM_MISSIONS.reduce((s,[k,,,pts])=>s+(d.missions[k]?pts:0),0);
+    const grade = mScore>=25000?5:mScore>=17500?4:mScore>=10000?3:mScore>=5000?2:1;
+    body = `<div class="row spread"><span class="label">Hidden Files & Perks (${fileDone}/${HIDDEN_FILES.length})</span><span class="pill ok">Cleared sectors: +50% EXP</span></div>
+      <div class="chk-grid">${HIDDEN_FILES.map(([k,lbl,perk])=>`<label class="chk ${d.files[k]?'done':''}"><input type="checkbox" data-act="dng-file" data-k="${k}" ${d.files[k]?'checked':''}><span><b>${lbl}</b><br><span class="muted" style="font-size:12px">${perk}</span></span></label>`).join('')}</div>
+      <div class="row spread" style="margin-top:6px"><span class="label">Dimensional Missions (Grade ${grade} · ${mScore.toLocaleString()} pts)</span><span class="muted" style="font-size:12px">Grades: 0 / 5k / 10k / 17.5k / 25k</span></div>
+      <div class="chk-grid">${DIM_MISSIONS.map(([k,lbl,typ,pts])=>`<label class="chk ${d.missions[k]?'done':''}"><input type="checkbox" data-act="dng-miss" data-k="${k}" ${d.missions[k]?'checked':''}><span><b>${lbl}</b> <span class="muted">(${typ} · +${pts} pts)</span></span></label>`).join('')}</div>`;
+  } else {
+    body = `<div class="note-box"><b>Dimensional Skills (Normal → Rare → Epic → Unique → Legendary):</b> Earned from Skill Coupons (1 every 5 Inspector Lv.). Owning duplicates levels up a skill; deleting unwanted skills grants Dimensional Mission Points. Death inheritance (Lv. 50 / 80 / 100) lets you keep 1–3 skills at Lv. 1.</div>
+      <table class="jtable"><thead><tr><th>Skill</th><th>Type</th><th>Tiers</th><th>Effect</th></tr></thead>
+        <tbody>${DIM_SKILLS.map(([n,t,tr,ef])=>`<tr><td><b>${n}</b></td><td>${t}</td><td>${tr}</td><td>${ef}</td></tr>`).join('')}</tbody></table>
+      <div class="note-box"><b>Mapae Modules System:</b> Dying in the dungeon sends you to a special room to install/upgrade 3 modules using fragments (plus milestone bonuses).</div>
+      <table class="jtable"><thead><tr><th>Module</th><th>Color</th><th>Effect</th></tr></thead>
+        <tbody>${MAPAE_MODULES.map(([n,c,ef])=>`<tr><td><b>${n}</b></td><td>${c}</td><td>${ef}</td></tr>`).join('')}</tbody></table>`;
+  }
+  document.getElementById('tab-guide').innerHTML = `<div class="panel">
+    <div class="row spread"><h2>Dungeon</h2>
+      <div class="row"><span class="pill ok">5-Room Formula</span>
+        ${BRIDGE?`<button class="btn-add" data-act="dng-ov-open" style="padding:5px 12px;font-size:12.5px">Launch Dungeon Overlay</button>`:''}
+      </div>
+    </div>
+    <div class="seg">${subs.map(([k,n])=>`<button data-act="dng-sub" data-s="${k}" aria-pressed="${d.sub===k}">${n}</button>`).join('')}</div>
+    ${body}
+  </div>`;
+}
+function renderProgress(){
+  const lv = Math.max(1, Math.min(200, state.inspLv || 1));
+  const inherit = lv>=100 ? 3 : lv>=80 ? 2 : lv>=50 ? 1 : 0;
+  const coupons = Math.floor(lv/5);
+  const nextCoupLv = coupons * 5 + 5;
+  const nextInhLv = lv<50 ? 50 : lv<80 ? 80 : lv<100 ? 100 : null;
+  const mp = state.mapae || (state.mapae = {stars:0, pot3l:false});
+  const stars = Math.max(0, Math.min(22, +mp.stars||0));
+  document.getElementById('tab-guide').innerHTML = `<div class="panel">
+    <div class="row spread"><h2>Inspector & Mapae Badge Planner</h2>
+      <div class="row"><span class="label">Inspector Lv.</span>
+        <button class="ghost" data-act="insp" data-d="-5">-5</button>
+        <button class="ghost" data-act="insp" data-d="-1">-1</button>
+        <b style="min-width:28px;text-align:center">${lv}</b>
+        <button class="ghost" data-act="insp" data-d="1">+1</button>
+        <button class="ghost" data-act="insp" data-d="5">+5</button>
+      </div>
+    </div>
+    <div class="calc-grid">
+      <div class="calc-box">
+        <span class="label">Skill Coupons (1 per 5 Lv)</span>
+        <div class="calc-kpi">${coupons} earned</div>
+        <span class="muted" style="font-size:12px">Next coupon at <b>Lv. ${nextCoupLv}</b> (${nextCoupLv-lv} level${nextCoupLv-lv===1?'':'s'} away)</span>
+      </div>
+      <div class="calc-box">
+        <span class="label">Death Inheritance Slots</span>
+        <div class="calc-kpi ${inherit===3?'ok':''}">${inherit} / 3 unlocked</div>
+        <div class="row" style="gap:4px">${[50,80,100].map(m=>`<span class="pill ${lv>=m?'ok':''}" style="padding:2px 7px;font-size:11px;opacity:${lv>=m?1:0.55}">Lv.${m}</span>`).join('')}</div>
+        <span class="muted" style="font-size:12px">${nextInhLv ? `Next slot at <b>Lv. ${nextInhLv}</b> (${nextInhLv-lv} levels away)` : 'All 3 inheritance slots unlocked!'}</span>
+      </div>
+      <div class="calc-box">
+        <span class="label">Inspector's Mapae Badge</span>
+        <div class="row spread">
+          <div class="calc-kpi ${stars===22?'ok':''}">${stars}★ <span class="muted" style="font-size:13px;font-weight:500">/ 22★</span></div>
+          <div class="row" style="gap:4px">
+            <button class="ghost" data-act="mapae-star" data-d="-1" ${stars<=0?'disabled':''}>-1★</button>
+            <button class="ghost" data-act="mapae-star" data-d="1" ${stars>=22?'disabled':''}>+1★</button>
+          </div>
+        </div>
+        <label class="row" style="gap:6px;font-size:12px;cursor:pointer"><input type="checkbox" data-act="mapae-3l" ${mp.pot3l?'checked':''}> 3L Potential cubed early (recommended before 22★)</label>
+      </div>
+    </div>
+    <div class="note-box"><b>Warning:</b> Dying resets Inspector Level and Inspector Grade points tied to it, but keeps your unlocked inheritance skills (Lv. 50 / 80 / 100).</div>
+    <div class="chk-grid">
+      <div class="note-box"><b>Mapae Module & Inspector Badge</b><br>Dying sends you to a special room to upgrade the <b>Mapae Module</b> (stats + milestone bonuses).<br><br><b>Inspector Badge:</b> Starforceable to 22★ (now gets ATT/MATT from stars) and upgraded/potentialled with <b>Mapae Fragments</b>. <b>Tip:</b> Cube it for 3 lines early before starforcing.</div>
+      <div class="note-box"><b>Starforcing & Bossing</b><br><b>Starforcing:</b> Uses Quanah Crystals. Only starforce <b>Libae gear</b> (unlimited spares) and your <b>weapon</b> early—dungeon drops can come pre-starred. Later starforce Slime Ring & Daybreak Pendant.<br><br><b>Bossing:</b> Uses Silver/Gold Entry Passes (unlimited entries if you have passes). Farm <b>Chaos Slime</b> first for Slime Ring; <b>Black Mage</b> drops the Inspector's Mapae Badge (22★).</div>
+      <div class="note-box"><b>Proving Grounds (Farming) Loot</b><ul style="margin:6px 0 0;padding-left:18px">${['Quanah Crystals & Hologram items','Fam cards (drop rate fams do NOT work in dungeon)','Boss entry tickets (Silver / Gold)','Fatigue recovery potions','Grindstone 5 & Blue sparkling star potion','VIP exp coupons, VIP stats & Gold pot','Ring boxes, Mag soul boxes, Symbol selectors'].map(x=>`<li>${x}</li>`).join('')}</ul></div>
+    </div>
+    <div class="note-box" style="border-color:var(--warn)"><b>Known Bugs & Issues (from guide):</b> BaM cannot double jump (crashes) • Kanna random DC • Erel input lag / inputs not registering.</div>
+    <div class="note-box"><b>Hologram Skills Guide:</b> <b>Registry</b> places 2 class marks on enemies (proc with matching class hologram skills for burst + passive FD). <b>White Hole</b> (60s portal) & <b>Dimensional Leap</b> (teleport) each grant <b>+5% FD per level</b>. <b>Black Hole</b> pulls & stuns enemies (+5% FD/lv). Stat enhancements give passive FD + stats.</div>
+    <div class="note-box"><b>Credits & Sources:</b> Mechanics, checklists, and progression data sourced from <a href="https://docs.google.com/document/d/1X2P51gaWxZ_Ltxr466CEH26pK9OouXyDT5rOdbYxOhE/edit?tab=t.0" target="_blank" rel="noopener" style="color:var(--accent)">The Quanah Files</a> by <b>PiercedMoon</b>, and <b>BlackHexgon</b> (on Discord).</div>
+  </div>`;
+}
+function renderFdBox(res){
+  const dlBase = res.counts[IDX.dl] || 0, whBase = res.counts[IDX.wh] || 0;
+  const pf = state.prismFd || (state.prismFd = {dl:0, wh:0});
+  const dlPrism = Math.max(0, Math.min(5, +pf.dl||0)), whPrism = Math.max(0, Math.min(5, +pf.wh||0));
+  const dlTot = dlBase + (dlBase>=3 ? dlPrism : 0), whTot = whBase + (whBase>=3 ? whPrism : 0);
+  const multFd = ((1 + dlTot*0.05) * (1 + whTot*0.05) - 1) * 100;
+  const baseFd = ((1 + dlBase*0.05) * (1 + whBase*0.05) - 1) * 100;
+  const eligPrism = res.picks.filter(it => it && it.sockets && it.sockets.includes('prismatic') && (it.lines.includes('dl') || it.lines.includes('wh'))).length;
+  return `<div class="calc-box" style="gap:6px">
+    <div class="row spread"><span class="label">Hologram Final Damage (+5% FD / Lv)</span><span class="pill ok">+${multFd.toFixed(2)}% FD</span></div>
+    <div class="row spread" style="font-size:12px">
+      <span>DL Lv.<b>${dlTot}</b> (+${dlTot*5}%) · WH Lv.<b>${whTot}</b> (+${whTot*5}%)</span>
+      <span class="muted">Gear base: +${baseFd.toFixed(2)}%${eligPrism?` · ${eligPrism} Prismatic slot${eligPrism===1?'':'s'} w/ DL/WH`:''}</span>
+    </div>
+    <div class="row spread" style="font-size:12px">
+      <div class="row" style="gap:4px"><span class="muted">Prismatic DL:</span>
+        <button class="ghost" data-act="pfd" data-k="dl" data-d="-1" ${dlPrism<=0?'disabled':''}>-</button>
+        <b>+${dlPrism}</b>
+        <button class="ghost" data-act="pfd" data-k="dl" data-d="1" ${dlPrism>=5||dlBase<3?'disabled':''}>+</button>
+      </div>
+      <div class="row" style="gap:4px"><span class="muted">Prismatic WH:</span>
+        <button class="ghost" data-act="pfd" data-k="wh" data-d="-1" ${whPrism<=0?'disabled':''}>-</button>
+        <b>+${whPrism}</b>
+        <button class="ghost" data-act="pfd" data-k="wh" data-d="1" ${whPrism>=5||whBase<3?'disabled':''}>+</button>
+      </div>
+    </div>
+  </div>`;
+}
+function evalSetSockets(picks){
+  const sg = state.sockGoal || 'pris2';
+  const matchColors = JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join(' / ');
+  const pickEv = picks.map(it => it && it.sockets && it.sockets.length ? evalSockets(it.sockets) : null);
+  const score = pickEv.reduce((s,ev)=>s+(ev?ev.score:0),0);
+  const prismCount = pickEv.filter(ev=>ev && ev.hasPrism).length;
+  const statCount = sg==='3class' ? score : (score - prismCount);
+  const statTarget = sg==='3class' ? 18 : 12;
+  const needSlots = SLOTS.map((s,si)=>({s,si,ev:pickEv[si]})).filter(x=>!x.ev || !x.ev.perfect);
+  const done = needSlots.length===0 && score===18;
+  return {sg, matchColors, pickEv, score, prismCount, statCount, statTarget, needSlots, done};
+}
+function bothNeedSocksHtml(){
+  const sg = state.sockGoal || 'pris2';
+  const c = JEWELS.find(j=>j.main===state.mainStat).color.toLowerCase();
+  const cols = sg==='3class' ? [c,c,c] : ['prismatic',c,c];
+  return `<span class="socks">${cols.map(k=>sockIcon(k,'need')).join('')}</span>`;
+}
+function renderBothStatusHtml(res, ss, missing, compact){
+  const linesDone = res.best===TOTAL;
+  const slotRow = x => {
+    const it = res.picks[x.si];
+    const missNote = !it ? 'no 3L piece' : !x.ev ? 'no sockets scanned' : `${x.ev.score}/3${ss.sg==='pris2'&&!x.ev.hasPrism?' · needs Pris':''}`;
+    return `<div class="slot-need">
+      <div class="row spread"><b>${x.s}</b><span class="muted" style="font-size:11px">${missNote}</span></div>
+      ${it?`<div class="row">${it.lines.map((k,j)=>chip(k,res.used[x.si][j]?'':'wasted')).join('')}</div>`:''}
+      ${x.ev?`<div class="row">${x.ev.sockets.map((c,j)=>sockChip(c,x.ev.hits[j]?'':'wasted')).join('')}</div>`:''}
+    </div>`;
+  };
+  if(!linesDone){
+    const trueOuts = res.hunt.filter(h => ss.needSlots.every(x => x.si===h.slot));
+    if(trueOuts.length){
+      const LIMIT = compact ? 4 : 8;
+      const shown = state.huntOpen ? trueOuts : trueOuts.slice(0, LIMIT);
+      return `<div class="hunt"><span class="label">One drop finishes it (${trueOuts.length})</span>
+        ${renderProbs(trueOuts.length)}
+        ${shown.map(h=>`<div class="opt"><b>${SLOTS[h.slot]}</b>${h.need.map(k=>chip(k)).join('')}${bothNeedSocksHtml()}</div>`).join('')}
+        ${trueOuts.length>LIMIT?`<button class="ghost" id="hunt-toggle" data-act="hunt-toggle">${state.huntOpen?'Show fewer':`Show ${trueOuts.length-LIMIT} more`}</button>`:''}</div>`;
+    }
+    const shownSocks = compact ? ss.needSlots.slice(0, 4) : ss.needSlots;
+    return `<div class="hunt">
+      <span class="label">Still missing lines (${TOTAL-res.best})</span>
+      <div class="opt">${missing.map(k=>chip(k)).join('')}</div>
+      <span class="label" style="margin-top:4px">Slots needing ${ss.sg==='3class'?'3× '+ss.matchColors:'Pris + 2× '+ss.matchColors} (${ss.needSlots.length})</span>
+      ${shownSocks.map(slotRow).join('')}
+      ${compact && ss.needSlots.length>4?`<span class="muted" style="font-size:11px">+${ss.needSlots.length-4} more slots in Full UI</span>`:''}
+      ${res.hunt.length?`<span class="muted" style="font-size:11.5px">More than 1 drop away (other slots still need sockets). 3L-only outs: ${res.hunt.slice(0,3).map(h=>SLOTS[h.slot]).join(', ')}.</span>`:''}
+    </div>`;
+  }
+  return `<div class="hunt"><span class="label">Slots still needing ${ss.sg==='3class'?'3× '+ss.matchColors:'Prismatic + 2 '+ss.matchColors} (${ss.needSlots.length})</span>
+    ${renderBothSockProbs(ss.needSlots.length)}
+    ${ss.needSlots.map(slotRow).join('')}</div>`;
+}
+function render(){
+  if(HUD) return renderHud();
+  if(OV) return renderOverlay();
+  if(DNG) return renderDungeonOverlay();
+  document.getElementById('nav').innerHTML = [['solver','3L Solver'],['preleap','Pre-Leap'],['jewels','Jewels'],['dungeon','Dungeon'],['progress','Progression']].map(([k,n])=>`<button data-act="tab" data-t="${k}" aria-pressed="${state.tab===k}">${n}</button>`).join('');
+  document.getElementById('tab-solver').hidden = state.tab!=='solver';
+  document.getElementById('tab-guide').hidden = state.tab==='solver';
+  if(state.tab==='preleap'){ document.querySelector('header p').textContent='Challenger World 4 checklist before your one-time leap to Quanah World.'; return renderPreLeap(); }
+  if(state.tab==='jewels'){ document.querySelector('header p').textContent='Jewel colors by main stat and Prismatic socket rules for Lv. 4+ hologram lines.'; return renderJewels(); }
+  if(state.tab==='dungeon'){ document.querySelector('header p').textContent='5-room dungeon flow, buffs, fatigue potions, and dungeon vs farming drop tables.'; return renderDungeon(); }
+  if(state.tab==='progress'){ document.querySelector('header p').textContent='Inspector inheritance, Mapae module, Inspector badge, starforcing, bossing & known bugs.'; return renderProgress(); }
+  document.querySelector('header p').innerHTML = state.focus==='sockets'
+    ? `Socket Focus (${state.mainStat}): hunt Prismatic + ${JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join('/')} sockets for Orb transfers.`
+    : `Build: ${BUILDS[state.build].desc}${BRIDGE?' • F8 scan, F9 toggle overlay (windowed/borderless).':' • <a href="https://github.com/Altord/QuanahWorldUtilities/releases" target="_blank" rel="noopener" style="color:var(--accent)">Download Desktop Overlay (.exe)</a>'}`;
+  document.getElementById('banner').innerHTML = (state.focus==='lines' && state.example) ? `<div class="banner">
+    <span><b>Example gear loaded.</b> These pieces are made up so you can see how it works.</span>
+    <button class="ghost" id="clear-example" data-act="clear-now">Clear and start mine</button></div>` : '';
+  document.getElementById('controls').innerHTML = `
+    <div class="row spread">
+      <div class="row"><span class="label">Build</span>
+        <div class="seg">${Object.entries(BUILDS).map(([k,b])=>`<button data-act="build" data-b="${k}" aria-pressed="${state.build===k}">${b.name}</button>`).join('')}</div>
+      </div>
+      <div class="row"><span class="label">Scan Focus</span>
+        <div class="seg"><button data-act="focus" data-f="lines" aria-pressed="${state.focus==='lines'}">3L Lines</button>
+          <button data-act="focus" data-f="sockets" aria-pressed="${state.focus==='sockets'}">Socket Focus</button>
+          <button data-act="focus" data-f="both" aria-pressed="${state.focus==='both'}">3L + Sockets</button></div>
+      </div>
+      ${state.focus!=='lines'?(()=>{ const sg=state.sockGoal||'pris2'; return `<div class="row"><span class="label">Socket Goal</span>
+        <div class="seg"><button data-act="sockgoal" data-g="pris2" aria-pressed="${sg==='pris2'}">Pris + 2× Class</button>
+          <button data-act="sockgoal" data-g="3class" aria-pressed="${sg==='3class'}">3× Class</button></div>
+      </div>`; })():''}
+      <div class="row"><span class="label">Class</span>
+        <div class="seg">${Object.entries(JOBS).map(([k,j])=>`<button data-act="ujob" data-j="${k}" aria-pressed="${state.userJob===k}" title="${j.name} (${j.sub})">${k}</button>`).join('')}</div>
+        ${state.charClass?`<span class="muted" style="font-size:12px">(${state.charClass})</span>`:`<span class="muted" style="font-size:12px">Open Char Info once to auto-detect</span>`}
+      </div>
+      ${BRIDGE?`<div class="row"><span class="label">Auto-Add</span>${autoAddSeg()}<button class="btn-add" data-act="open-ov" ${ovOpen?'disabled':''} style="padding:5px 12px;font-size:12.5px" title="${ovOpen?'Overlay is already open':'Open the 3L Solver overlay'}">${ovOpen?'Overlay Open':'Launch 3L Overlay'}</button></div>`:''}
+    </div>
+    <div class="note-box"><b>Why choose each build?</b> <b>Meta Registry</b> maxes Registry + 5 class procs for all-around damage. <b>No-Class Crit</b> swaps the 5 class skills for 3× Crit DMG (some classes lose damage with Registry procs). <b>Boss (No-WH)</b> swaps White Hole for 3× Boss DMG when focusing purely on bosses. Use <b>Socket Focus</b> after finishing 3L to hunt Prismatic + ${JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join('/')} sockets for Orb transfers.${BRIDGE?`<br><b>Auto-Add:</b> <b>Off</b> = manual Add/F7 · <b>Any</b> = all class gear (early starter) · <b>3/3 Build</b> = fastest for 18/18 (banks all clean 3L pieces for combos) · <b>+Gain/Outs</b> = immediate score/out upgrades · <b>3/3+Gain</b> = best near 18/18 (clean 3L + immediate gain).`:''}</div>`;
+  if(state.focus==='sockets') return renderSocketSolver();
+  const res = solve(state.items);
+  const bothMode = state.focus==='both', ss = bothMode ? evalSetSockets(res.picks) : null;
+  const doneNow = res.best===TOTAL && (!bothMode || ss.done);
+  const celKey = (bothMode ? 'both:' : '') + state.build;
+  if(doneNow && !state.celebrated[celKey]){ state.celebrated[celKey] = true; save(); celebrate(); }
+  else if(!doneNow && state.celebrated[celKey]){ delete state.celebrated[celKey]; save(); }
+  const total =state.items.reduce((a,b)=>a+b.length,0);
+
+  const pend = [0,1,2].map(i => state.pending[i] ? chip(state.pending[i]) : `<span class="chip empty">line ${i+1}</span>`).join('');
+  document.getElementById('add').innerHTML = `
+    <div class="row spread"><h2>Add a piece</h2><span class="muted">Pick the slot, then tap its 3 different lines</span></div>
+    <div class="picker"><div class="tabs">${SLOTS.map((s,i)=>`<button id="slot-tab-${i}" data-act="slot" data-i="${i}" aria-pressed="${i===state.active}">${s}<span class="n">${state.items[i].length}</span></button>`).join('')}</div>
+    <div class="cols">${GROUPS.map(g=>`<div class="col">${g.map(statBtn).join('')}</div>`).join('')}</div></div>
+    <div class="row"><span class="label">New ${SLOTS[state.active]}</span>${pend}
+      ${state.pending.length?`<button class="ghost" id="undo-line" data-act="undo">Undo line</button>`:''}</div>`;
+
+  document.getElementById('inv').innerHTML = `
+    <div class="row spread"><h2>Your 3L gear <span class="muted" style="font-weight:500">(${total})</span></h2>
+      ${total?`<button class="ghost ${state.confirmClear?'danger':''}" id="clear-all" data-act="clear">${state.confirmClear?'Click again to clear everything':'Clear all'}</button>`:''}</div>
+    <div class="slots">${SLOTS.map((s,si)=>`<div class="slot">
+      <div class="slot-head"><h3>${s}</h3><span class="muted">${state.items[si].length} piece${state.items[si].length===1?'':'s'}</span></div>
+      ${state.items[si].length ? state.items[si].map((it,n)=>`<div class="item ${res.picks[si]===it?'picked':''}">
+          <span class="num">#${n+1}</span><span class="lines">${it.lines.map(k=>chip(k)).join('')}${it.sockets?`<span class="socks">${it.sockets.map(c=>sockIcon(c)).join('')}</span>`:''}</span>
+          <button class="x" data-act="del" data-s="${si}" data-id="${it.id}" aria-label="Remove ${s} #${n+1}">&times;</button></div>`).join('')
+        : `<div class="none">No 3L ${s.toLowerCase()} yet</div>`}
+    </div>`).join('')}</div>`;
+
+  const linesDone = res.best===TOTAL, done = doneNow;
+  const missing = []; res.counts.forEach((c,i)=>{ for(let j=c;j<T[i];j++) missing.push(STATS[i].k); });
+  let hunt = '';
+  if(bothMode && !done){
+    hunt = renderBothStatusHtml(res, ss, missing, false);
+  } else if(!linesDone){
+    if(res.hunt.length){
+      const LIMIT = 8;
+      const shown = state.huntOpen ? res.hunt : res.hunt.slice(0,LIMIT);
+      hunt = `<div class="hunt"><span class="label">One drop finishes it (${res.hunt.length})</span>
+        ${renderProbs(res.hunt.length)}
+        ${shown.map(h=>`<div class="opt"><b>${SLOTS[h.slot]}</b>${h.need.map(k=>chip(k)).join('')}</div>`).join('')}
+        ${res.hunt.length>LIMIT?`<button class="ghost" id="hunt-toggle" data-act="hunt-toggle" aria-expanded="${state.huntOpen}">${state.huntOpen?'Show fewer':`Show ${res.hunt.length-LIMIT} more option${res.hunt.length-LIMIT===1?'':'s'}`}</button>`:''}</div>`;
+    } else {
+      hunt = `<div class="hunt"><span class="label">Still missing</span><div class="opt">${missing.map(k=>chip(k)).join('')}</div>
+        <span class="muted">More than one piece away. Keep adding 3L drops.</span></div>`;
+    }
+  }
+  const shortParts = [];
+  if(!linesDone) shortParts.push(`${TOTAL-res.best} line${TOTAL-res.best===1?'':'s'}`);
+  if(bothMode && !ss.done) shortParts.push(`${18-ss.score} socket${18-ss.score===1?'':'s'}`);
+  const sockReqs = bothMode ? `<div class="reqs" style="grid-template-columns:1fr;border-top:1px solid var(--line);padding-top:10px">
+      ${ss.sg==='pris2'?`<div class="req s-prismatic ${ss.prismCount<6?'miss':''}"><span class="name">Prismatic (${ss.prismCount}/6)</span><span class="pips">${Array.from({length:6},(_,j)=>`<span class="pip ${j<ss.prismCount?'on':''}"></span>`).join('')}</span></div>`:''}
+      <div class="req s-${JEWELS.find(j=>j.main===state.mainStat).color.toLowerCase()} ${ss.statCount<ss.statTarget?'miss':''}"><span class="name">${ss.matchColors} (${ss.statCount}/${ss.statTarget})</span><span class="pips">${Array.from({length:ss.statTarget},(_,j)=>`<span class="pip ${j<ss.statCount?'on':''}"></span>`).join('')}</span></div>
+    </div>` : '';
+  document.getElementById('result').innerHTML = `
+    <div class="row spread"><h2>Best set${bothMode?` (${state.mainStat})`:''}</h2><span class="pill ${done?'ok':'short'}">${done?'Complete':shortParts.join(' · ')+' short'}</span></div>
+    <div class="score"><span class="big">${res.best}</span><span class="of">of ${TOTAL} lines${bothMode?` · <b>${ss.score}/18</b> sockets${ss.sg==='pris2'?` (${ss.prismCount}/6 Pris)`:' (3× Class)'}`:(done?`, ${res.ways} winning combo${res.ways===1?'':'s'}`:'')}</span></div>
+    <div class="reqs">${STATS.filter(s=>s.t>0).map(s=>{ const i=IDX[s.k]; return `<div class="req s-${s.k} ${res.counts[i]<s.t?'miss':''}"><span class="name">${s.n}</span>
+      <span class="pips" title="${res.counts[i]} of ${s.t}">${Array.from({length:s.t},(_,j)=>`<span class="pip ${j<res.counts[i]?'on':''}"></span>`).join('')}</span></div>`; }).join('')}</div>
+    ${sockReqs}
+    <div class="set"><span class="label">Equip these</span>
+      ${SLOTS.map((s,si)=>{ const it=res.picks[si];
+        return `<div class="item"><span class="slotname">${s}</span>${it?`<span class="num">#${state.items[si].indexOf(it)+1}</span>
+          <span class="lines">${it.lines.map((k,j)=>chip(k,res.used[si][j]?'':'wasted')).join('')}${it.sockets?`<span class="socks">${it.sockets.map((c,j)=>sockIcon(c,bothMode&&ss.pickEv[si]?(ss.pickEv[si].hits[j]?'need':'wasted'):'')).join('')}</span>`:''}</span>`:`<span class="muted">nothing yet</span>`}</div>`; }).join('')}
+      ${res.used.some(u=>u.includes(false))?`<span class="muted">Struck-through lines do not count toward the goal.</span>`:''}
+      ${(()=>{
+        const prismSlots = SLOTS.filter((_,si)=>res.picks[si] && res.picks[si].sockets && res.picks[si].sockets.includes('prismatic'));
+        const lv3 = STATS.filter(s=>s.t>=3 && res.counts[IDX[s.k]]>=3).map(s=>s.n);
+        if(!prismSlots.length || !lv3.length) return '';
+        return `<div class="note-box"><b>Prismatic +4+ ready (${prismSlots.join(', ')}):</b> ${lv3.join(', ')} at Lv. 3 can exceed Lv. 3 with matching Prismatic Jewels.</div>`;
+      })()}
+    </div>${hunt}`;
+}
+
+function renderSocketSolver(){
+  syncItemSocketsToSockItems();
+  const picks = bestSockPicks();
+  const matchColors = JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join(' / ');
+  const totalSock = state.sockItems.reduce((a,b)=>a+b.length,0);
+  const sg = state.sockGoal || 'pris2';
+  const score = picks.reduce((sum,it)=>sum+(it?evalSockets(it.lines).score:0),0);
+  const prismCount = picks.filter(it=>it && evalSockets(it.lines).hasPrism).length;
+  const statCount = sg==='3class' ? score : (score - prismCount);
+  const statTarget = sg==='3class' ? 18 : 12;
+  const needSlots = SLOTS.map((s,si)=>({s,si,it:picks[si],ev:picks[si]?evalSockets(picks[si].lines):null})).filter(x=>!x.ev || !x.ev.perfect);
+  const pend = [0,1,2].map(i=>state.pendSock[i]?sockChip(state.pendSock[i]):`<span class="chip empty">socket ${i+1}</span>`).join('');
+  document.getElementById('add').innerHTML = `
+    <div class="row spread"><h2>Add a socket piece</h2><span class="muted">Pick the slot, then tap its 3 jewel sockets (need ${sg==='3class'?`<b>3× ${matchColors}</b>`:`<b>Prismatic</b> + <b>${matchColors}</b>`} for ${state.mainStat})</span></div>
+    <div class="picker"><div class="tabs">${SLOTS.map((s,i)=>`<button data-act="slot" data-i="${i}" aria-pressed="${i===state.active}">${s}<span class="n">${state.sockItems[i].length}</span></button>`).join('')}</div>
+    <div class="row" style="max-width:340px">${SOCK_KEYS.map(c=>`<button class="chip jewel s-${c}" data-act="add-sock" data-k="${c}">${SOCK_LABEL[c]}</button>`).join('')}</div></div>
+    <div class="row"><span class="label">New ${SLOTS[state.active]}</span>${pend}
+      ${state.pendSock.length?`<button class="ghost" data-act="undo-sock">Undo socket</button>`:''}</div>`;
+
+  document.getElementById('inv').innerHTML = `
+    <div class="row spread"><h2>Your socket gear <span class="muted" style="font-weight:500">(${totalSock})</span></h2>
+      ${totalSock?`<button class="ghost" data-act="clear-sock">Clear sockets</button>`:''}</div>
+    <div class="slots">${SLOTS.map((s,si)=>`<div class="slot">
+      <div class="slot-head"><h3>${s}</h3><span class="muted">${state.sockItems[si].length} piece${state.sockItems[si].length===1?'':'s'}</span></div>
+      ${state.sockItems[si].length ? state.sockItems[si].map((it,n)=>{ const ev=evalSockets(it.lines); return `<div class="item ${picks[si]===it?'picked':''}">
+          <span class="num">#${n+1}</span><span class="lines">${it.lines.map((c,j)=>sockChip(c,ev.hits[j]?'':'wasted')).join('')}</span>
+          <button class="x" data-act="del-sock" data-s="${si}" data-id="${it.id}" aria-label="Remove ${s} #${n+1}">&times;</button></div>`; }).join('')
+        : `<div class="none">No socket ${s.toLowerCase()} yet</div>`}
+    </div>`).join('')}</div>`;
+
+  const done = needSlots.length===0 && score===18;
+  document.getElementById('result').innerHTML = `
+    <div class="row spread"><h2>Best socket set (${state.mainStat})</h2><span class="pill ${done?'ok':'short'}">${done?'Perfect 18/18':`${18-score} sockets short`}</span></div>
+    <div class="score"><span class="big">${score}</span><span class="of">of 18 matching sockets${sg==='pris2'?` (${prismCount}/6 Prismatic)`:' (3× Class)'}</span></div>
+    <div class="reqs" style="grid-template-columns:1fr">
+      ${sg==='pris2'?`<div class="req s-prismatic ${prismCount<6?'miss':''}"><span class="name">Prismatic (${prismCount}/6)</span><span class="pips">${Array.from({length:6},(_,j)=>`<span class="pip ${j<prismCount?'on':''}"></span>`).join('')}</span></div>`:''}
+      <div class="req s-${JEWELS.find(j=>j.main===state.mainStat).color.toLowerCase()} ${statCount<statTarget?'miss':''}"><span class="name">${matchColors} (${statCount}/${statTarget})</span><span class="pips">${Array.from({length:statTarget},(_,j)=>`<span class="pip ${j<statCount?'on':''}"></span>`).join('')}</span></div>
+    </div>
+    <div class="set"><span class="label">Best sockets per slot</span>
+      ${SLOTS.map((s,si)=>{ const it=picks[si]; const ev=it?evalSockets(it.lines):null;
+        return `<div class="item"><span class="slotname">${s}</span>${it?`<span class="num">#${state.sockItems[si].indexOf(it)+1}</span>
+          <span class="lines">${it.lines.map((c,j)=>sockChip(c,ev.hits[j]?'':'wasted')).join('')}</span>`:`<span class="muted">nothing yet</span>`}</div>`; }).join('')}
+    </div>
+    ${needSlots.length?`<div class="hunt"><span class="label">Slots still needing 3/3 sockets (${needSlots.length})</span>
+      ${renderSockProbs(needSlots.length)}
+      ${needSlots.map(x=>`<div class="opt"><b>${x.s}</b><span class="muted">${x.ev?`${x.ev.score}/3${sg==='pris2'&&!x.ev.hasPrism?' (needs Prismatic)':''}`:(sg==='3class'?'needs 3× '+matchColors:'needs Prismatic + 2 '+matchColors)}</span></div>`).join('')}</div>`:''}`;
+}
+
+// ---------- celebration when the set reaches 18/18 ----------
+let wasDone = null, audio = null;
+function celebrate(){ fireworks(); fanfare(); }
+function fanfare(){
+  try{
+    const AC = window.AudioContext || window.webkitAudioContext; if(!AC) return;
+    audio = audio || new AC(); audio.resume();
+    const t0 = audio.currentTime + 0.02;
+    [523.25,659.25,783.99,1046.5,1318.5].forEach((f,i)=>{
+      const o = audio.createOscillator(), g = audio.createGain(), t = t0 + i*0.11, len = i===4 ? 0.9 : 0.25;
+      o.type = 'triangle'; o.frequency.value = f;
+      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.2,t+0.02); g.gain.exponentialRampToValueAtTime(0.0001,t+len);
+      o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t+len+0.05);
+    });
+    // firework pops: short bursts of filtered noise
+    const n = Math.floor(audio.sampleRate*0.35), buf = audio.createBuffer(1,n,audio.sampleRate), d = buf.getChannelData(0);
+    for(let i=0;i<n;i++) d[i] = (Math.random()*2-1) * Math.pow(1-i/n,3);
+    [0.15,0.55,0.9,1.3,1.75].forEach(dt=>{
+      const s = audio.createBufferSource(), f = audio.createBiquadFilter(), g = audio.createGain();
+      s.buffer = buf; f.type = 'lowpass'; f.frequency.value = 900 + Math.random()*1200; g.gain.value = 0.25;
+      s.connect(f); f.connect(g); g.connect(audio.destination); s.start(t0+dt);
+    });
+  }catch(e){}
+}
+function fireworks(){
+  if(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:100';
+  document.body.appendChild(c);
+  const dpr = window.devicePixelRatio || 1, W = innerWidth, H = innerHeight;
+  c.width = W*dpr; c.height = H*dpr;
+  const x = c.getContext('2d'); x.scale(dpr,dpr);
+  const cols = ['#7a5cf0','#2f9bd6','#1fa67a','#e0484d','#f0a92b','#d6409f','#ff8a4c'];
+  const BURSTS = 9; let parts = [], bursts = 0, nextAt = 0, last = performance.now(); const start = last;
+  function burst(){
+    const bx = W*(0.12+Math.random()*0.76), by = H*(0.12+Math.random()*0.45), col = cols[Math.floor(Math.random()*cols.length)];
+    for(let i=0;i<80;i++){
+      const a = Math.random()*Math.PI*2, v = 60+Math.random()*300;
+      parts.push({x:bx,y:by,vx:Math.cos(a)*v,vy:Math.sin(a)*v,life:1,decay:0.55+Math.random()*0.5,col});
+    }
+  }
+  function frame(now){
+    const dt = Math.min(0.05,(now-last)/1000); last = now;
+    if(bursts<BURSTS && now-start>=nextAt){ burst(); bursts++; nextAt = now-start+220+Math.random()*220; }
+    x.clearRect(0,0,W,H);
+    parts = parts.filter(p=>p.life>0);
+    for(const p of parts){
+      p.vx *= 0.985; p.vy = p.vy*0.985 + 160*dt; p.x += p.vx*dt; p.y += p.vy*dt; p.life -= p.decay*dt;
+      x.globalAlpha = Math.max(0,p.life); x.fillStyle = p.col;
+      x.beginPath(); x.arc(p.x,p.y,2.3,0,Math.PI*2); x.fill();
+    }
+    if(bursts<BURSTS || parts.length) requestAnimationFrame(frame); else c.remove();
+  }
+  requestAnimationFrame(frame);
+}
+
+// ---------- overlay & cursor HUD modes ----------
+const OV = new URLSearchParams(location.search).has('overlay');
+const HUD = new URLSearchParams(location.search).has('hud');
+const DNG = new URLSearchParams(location.search).has('dungeon');
+const BRIDGE = window.quanah || null;
+let ovOpen = true;
+if(BRIDGE && BRIDGE.onSync) BRIDGE.onSync(() => { syncFromStorage(); render(); });
+if(BRIDGE && BRIDGE.onOverlayState) BRIDGE.onOverlayState(open => { ovOpen = !!open; if(!OV && !HUD && !DNG) render(); });
+if(BRIDGE && BRIDGE.isOverlayOpen && !OV && !HUD && !DNG) BRIDGE.isOverlayOpen().then(v => { ovOpen = !!v; render(); });
+if(DNG && BRIDGE && BRIDGE.onDungeonScan) BRIDGE.onDungeonScan(msg => {
+  if(msg.status!=='done') return;
+  const d = getDng();
+  if(msg.trigger==='room'){
+    d.roomsEntered = (d.roomsEntered||0) + 1;
+    d.weeklyPower = Math.max(0, (d.weeklyPower||0) - (d.drainPerRoom||5));
+  }
+  const parsed = parseDungeonOcr(msg.text);
+  if(parsed.sector) d.sector = parsed.sector;
+  if(parsed.roomType) d.roomType = parsed.roomType;
+  if(parsed.weeklyPower!==null){ d.weeklyPower = parsed.weeklyPower; d.weeklyMax = parsed.weeklyMax || 150; }
+  if(parsed.buffs && parsed.buffs.length) d.roomBuffs = parsed.buffs;
+  if(parsed.detriments && parsed.detriments.length) d.detriments = parsed.detriments;
+  if(parsed.encounter) d.encounter = parsed.encounter;
+  if(parsed.isInv && parsed.found.length){
+    d.ownedCodes = [...new Set(parsed.found)];
+    if(d.ownedCodes.includes('overclocked')) d.fused = true;
+  } else if(parsed.isSelect && parsed.found.length){
+    d.offeredCodes = parsed.found;
+  }
+  d.lastScanAt = msg.at; d.lastTrigger = msg.trigger;
+  save(); renderDungeonOverlay();
+});
+function renderDungeonOverlay(){
+  const d = getDng();
+  const missBuffs = DNG_BUFFS.filter(([k])=>!d.buffs[k]);
+  const rec = d.offeredCodes.length ? recommendCode(d.offeredCodes, d.ownedCodes, d.fused) : null;
+  const codeName = id => (DUNGEON_CODES.find(c=>c.id===id)||{}).name || id;
+  const wmax = Math.max(1, +d.weeklyMax||150);
+  const wp = Math.max(0, Math.min(wmax, d.weeklyPower!==undefined?+d.weeklyPower:wmax));
+  document.getElementById('ov-root').innerHTML = `<div class="ov">
+    <div class="ov-head"><h2>Dungeon Helper <span class="muted" style="font-weight:500">${d.sector?`${d.sector}${d.roomType?' · '+d.roomType:''}`:`Rm ${d.roomsEntered||0}`}</span></h2>
+      <div class="row">${BRIDGE?`<button class="ghost" data-act="dng-ov-scan">Scan</button><button class="ghost" data-act="dng-ov-close">&times;</button>`:''}</div></div>
+    ${d.roomBuffs&&d.roomBuffs.length?`<div class="verdict yes" style="font-size:12px">Room Buff: ${d.roomBuffs.join(', ')}</div>`:''}
+    ${d.detriments&&d.detriments.length?`<div class="ov-note warn"><b>Active Detriment:</b> ${d.detriments.join(', ')}</div>`:''}
+    ${d.encounter?`<div class="ov-note"><b>Encounter:</b> ${d.encounter}</div>`:''}
+    <div class="ov-card">
+      <div class="row spread"><span class="label">Pre-Entry Buffs</span><span class="pill ${missBuffs.length?'short':'ok'}">${missBuffs.length?`${missBuffs.length} missing`:'All Ready'}</span></div>
+      <div class="row" style="gap:4px">${DNG_BUFFS.map(([k,lbl])=>`<button class="tag" data-act="dng-buff" data-k="${k}" aria-pressed="${!!d.buffs[k]}" style="${!d.buffs[k]?'border-color:var(--warn);color:var(--warn)':''}">${d.buffs[k]?'✓':'!'} ${lbl}</button>`).join('')}</div>
+    </div>
+    <div class="ov-card">
+      <div class="row spread"><span class="label">Projected Weekly Power</span><b>${wp} / ${wmax}</b></div>
+      <div class="row spread" style="gap:6px">
+        <input type="number" min="0" max="${wmax}" data-dng-num="weeklyPower" value="${wp}" style="width:68px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit">
+        <span class="muted" style="font-size:11.5px">Drain/rm:</span>
+        <input type="number" min="0" max="50" data-dng-num="drainPerRoom" value="${+d.drainPerRoom||5}" style="width:52px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit">
+        <button class="ghost" data-act="dng-room">-1 Rm</button>
+        <button class="ghost" data-act="dng-wp-reset">Reset</button>
+      </div>
+    </div>
+    <div class="ov-card">
+      <div class="row spread"><span class="label">Select Code & Overclocked Priority</span>${d.fused?`<span class="pill ok">Fused</span>`:`<span class="muted" style="font-size:11px">Heart → Limb → Head</span>`}</div>
+      ${rec ? (rec.warn ? `<div class="verdict no">${rec.warn}</div>` : `<div class="verdict yes">Pick: ${codeName(rec.pick)}</div><div class="muted" style="font-size:11.5px">${rec.reason}</div>`) : `<div class="ov-note">Open <b>Select Code</b> or <b>Owned Programs</b> in-game (auto-scans on room change / Reroll).</div>`}
+      ${d.offeredCodes.length?`<div class="row" style="gap:4px"><span class="muted" style="font-size:11px">Offered:</span>${d.offeredCodes.map(id=>`<button class="tag" data-act="dng-pick" data-id="${id}" aria-pressed="${rec&&rec.pick===id}">${codeName(id)}</button>`).join('')}</div>`:''}
+      <div class="row" style="gap:4px"><span class="muted" style="font-size:11px">Owned:</span>${['broken_heart','creaking_limb','overheated_head','overclocked'].map(id=>`<button class="tag" data-act="dng-own" data-id="${id}" aria-pressed="${d.ownedCodes.includes(id)}">${codeName(id)}</button>`).join('')}</div>
+    </div>
+  </div>`;
+  if(BRIDGE) requestAnimationFrame(()=>{ const el=document.querySelector('.ov'); if(el) BRIDGE.resizeDungeonOverlay(el.scrollHeight + 12); });
+}
+const AUTO_ADD_LABEL = { off: 'Off', any: 'Any', '3need': '3/3 Build', gain: '+Gain/Outs', both: '3/3+Gain' };
+const AUTO_ADD_DESC_BY_FOCUS = {
+  lines: {
+    off: 'Preview only — click Add (or press F7) to save.',
+    any: 'Adds all class gear (even with Other lines). Best early on.',
+    '3need': 'Fastest for 18/18 — banks all clean 3L pieces (no Other lines) for future combos.',
+    gain: 'Saves any item that raises your score or 1-drop outs (can include 1 Other line).',
+    both: 'Best near 18/18 — clean 3L pieces that raise score/outs now.'
+  },
+  sockets: {
+    off: 'Preview only — click Add (or press F7) to save.',
+    any: 'Adds any 3-socket item for your class.',
+    '3need': 'Adds only 3/3 perfect socket pieces matching your Socket Goal.',
+    gain: 'Adds any piece that improves your Best Sockets for that slot.',
+    both: 'Adds only 3/3 perfect sockets that also upgrade a missing slot.'
+  },
+  both: {
+    off: 'Preview only — click Add (or press F7) to save.',
+    any: 'Adds any valid 3L + 3-socket item for your class.',
+    '3need': 'Fastest for 3L+Sock — banks clean 3L pieces that ALSO have 3/3 perfect sockets.',
+    gain: 'Adds items with 3/3 perfect sockets that also raise your 3L score/outs.',
+    both: 'Strictest — clean 3L + 3/3 perfect sockets that raise your score/outs now.'
+  }
+};
+const getAutoAddDesc = m => (AUTO_ADD_DESC_BY_FOCUS[state.focus] || AUTO_ADD_DESC_BY_FOCUS.lines)[m] || '';
+const autoAddSeg = () => {
+  const aa = state.autoAdd || 'off';
+  return `<div class="seg">${Object.entries(AUTO_ADD_LABEL).map(([m,lbl])=>`<button data-act="autoadd" data-m="${m}" aria-pressed="${aa===m}">${lbl}</button>`).join('')}</div>`;
+};
+function shouldAutoAdd(sc, mode){
+  if(!mode || mode==='any') return true;
+  if(mode==='both') return shouldAutoAdd(sc, '3need') && shouldAutoAdd(sc, 'gain');
+  if(state.focus==='sockets'){
+    const se = sc.sockets && sc.sockets.length===3 ? evalSockets(sc.sockets) : null;
+    if(!se) return false;
+    if(mode==='3need') return se.perfect;
+    if(mode==='gain'){
+      const cur = bestSockPicks()[sc.slot];
+      const curEv = cur ? evalSockets(cur.lines) : null;
+      return !curEv || se.score>curEv.score || (se.score===curEv.score && (state.sockGoal||'pris2')==='pris2' && se.hasPrism && !curEv.hasPrism);
+    }
+    return false;
+  }
+  if(sc.lines.length!==3 || !noDupes(sc.lines)) return false;
+  if(state.focus==='both'){
+    const se = sc.sockets && sc.sockets.length===3 ? evalSockets(sc.sockets) : null;
+    if(!se || !se.perfect) return false;
+  }
+  if(mode==='3need') return sc.lines.every(k => IDX[k]!==undefined && T[IDX[k]]>0);
+  if(mode==='gain'){ const ev = evalItem(sc); return ev.gain>0 || ev.outsGain>0; }
+  return false;
+}
+const scanSig = sc => !sc || sc.slot===null ? '' : state.focus==='sockets'
+  ? (sc.sockets && sc.sockets.length ? `s:${sc.slot}:${sc.sockets.join(',')}` : '')
+  : (sc.lines.length===3 ? `l:${sc.slot}:${[...sc.lines].sort().join(',')}${state.focus==='both'?':'+(sc.sockets||[]).join(','):''}` : '');
+const justAdded = sc => !!(state.lastAdded && Date.now() - state.lastAdded.at < 2500 && state.lastAdded.sig === scanSig(sc));
+function tryAddScanned(sc, mode='any'){
+  if(!sc || sc.slot===null || (sc.job && sc.job!==state.userJob)) return false;
+  syncFromStorage();
+  if(hasDuplicate(sc)) return false;
+  if(!shouldAutoAdd(sc, mode)) return false;
+  if(state.focus==='sockets'){
+    if(sc.sockets && sc.sockets.length===3){ state.sockItems[sc.slot].push(mk(sc.sockets.slice())); state.lastAdded={sig:scanSig(sc),at:Date.now()}; return true; }
+  } else if(sc.lines.length===3 && noDupes(sc.lines)){
+    state.items[sc.slot].push(mk(sc.lines.slice(), {sockets:sc.sockets, prismatic:sc.prismatic}));
+    if(sc.sockets && sc.sockets.length===3) state.sockItems[sc.slot].push(mk(sc.sockets.slice()));
+    state.example=false; state.lastAdded={sig:scanSig(sc),at:Date.now()}; return true;
+  }
+  return false;
+}
+if(BRIDGE && BRIDGE.onQuickAdd) BRIDGE.onQuickAdd(() => {
+  if(tryAddScanned(state.scan)){ state.scan=null; save(); render(); }
+});
+let lastHudHtml = '';
+function paintHud(root, html){
+  if(!html){ if(lastHudHtml){ lastHudHtml=''; root.innerHTML=''; } if(BRIDGE) BRIDGE.hideHud(); return; }
+  if(html === lastHudHtml) return;
+  lastHudHtml = html;
+  root.innerHTML = html;
+  const box = root.firstElementChild;
+  if(BRIDGE && box) requestAnimationFrame(() => BRIDGE.showHud(box.offsetWidth + 2, box.offsetHeight + 2));
+}
+let hudFadeTimer = null;
+function scheduleHudRevert(){
+  clearTimeout(hudFadeTimer);
+  const left = state.lastAdded ? Math.max(60, 2500 - (Date.now() - state.lastAdded.at)) : 0;
+  if(left) hudFadeTimer = setTimeout(()=>{ if(HUD) renderHud(); else if(OV) renderOverlay(); }, left);
+}
+function renderHud(){
+  const root = document.getElementById('ov-root'), sc = state.scan;
+  if(!sc || (!sc.lines.length && sc.slot===null && !sc.sockets)){ paintHud(root, ''); return; }
+  const slot = sc.slot!==null ? SLOTS[sc.slot] : 'Item';
+  if(sc.job && sc.job!==state.userJob){
+    paintHud(root, `<div class="hud bad"><div class="hud-top"><span class="hud-slot">${slot} • ${sc.job}</span><span class="pill short">WRONG JOB (need ${state.userJob})</span></div></div>`);
+    return;
+  }
+  if(state.focus==='sockets' && sc.sockets){
+    const dup = hasDuplicate(sc), added = dup && justAdded(sc);
+    if(added) scheduleHudRevert();
+    const se = evalSockets(sc.sockets);
+    const win = !dup && se.perfect;
+    const cls = added ? 'good' : dup ? 'owned' : win ? 'win' : se.score>=2 ? 'good' : 'bad';
+    const verdict = added ? `<span class="pill ok">✓ ADDED!</span>` : dup ? `<span class="pill owned">ALREADY OWNED</span>` : win ? `<span class="pill win">★ 3/3 PERFECT SOCKETS ★</span>` : se.score>=2 ? `<span class="pill ok">${se.score}/3 GOOD SOCKETS</span>` : `<span class="pill short">PASS (${se.score}/3 sockets)</span>`;
+    const chips = se.sockets.map((c,i)=>`<span class="chip s-${c} ${se.hits[i]?'need':'wasted'}">${SOCK_LABEL[c]||c}</span>`).join('');
+    paintHud(root, `<div class="hud ${cls}"><div class="hud-top"><span class="hud-slot">${slot} • ${state.mainStat}</span>${verdict}</div><div class="row">${chips}${!dup&&sc.slot!==null?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`);
+    return;
+  }
+  if(state.focus==='sockets'){ paintHud(root, ''); return; }
+  const res = solve(state.items);
+  const missing = []; res.counts.forEach((c,i)=>{ for(let j=c;j<T[i];j++) missing.push(STATS[i].k); });
+  const ready = sc.slot!==null && sc.lines.length===3;
+  const dup = ready && hasDuplicate(sc), added = dup && justAdded(sc);
+  if(added) scheduleHudRevert();
+  const bothMode = state.focus==='both';
+  const se = bothMode && sc.sockets ? evalSockets(sc.sockets) : null;
+  const sockOk = !!(se && se.perfect);
+  const ev = ready && !dup ? evalItem(sc) : null;
+  const win = ev && ev.gain>0 && ev.after===TOTAL && (!bothMode || sockOk);
+  const keep = ev && (ev.gain>0 || ev.outsGain>0);
+  const keepFinal = bothMode ? (keep && sockOk) : keep;
+  const cls = added ? 'good' : dup ? 'owned' : ev ? (win ? 'win' : keepFinal ? 'good' : 'bad') : '';
+  const verdict = added
+    ? `<span class="pill ok">✓ ADDED!</span>`
+    : dup
+    ? `<span class="pill owned">ALREADY OWNED</span>`
+    : ev
+      ? (bothMode
+          ? (win ? `<span class="pill win">★ FINISHES SET + SOCKETS! ★</span>`
+            : keep && sockOk ? `<span class="pill ok">KEEP 3L + SOCKETS</span>`
+            : keep ? `<span class="pill short">3L KEEP · ${se?se.score+'/3':'no'} sock</span>`
+            : sockOk ? `<span class="pill short">SOCKETS OK · 3L PASS</span>`
+            : `<span class="pill short">PASS (${se?se.score+'/3':'0/3'} sock)</span>`)
+          : (ev.gain>0
+              ? (win ? `<span class="pill win">★ FINISHES SET! ${TOTAL}/${TOTAL} ★</span>` : `<span class="pill ok">KEEP +${ev.gain} (${ev.before}→${ev.after}/${TOTAL})</span>`)
+              : ev.outsGain>0
+                ? `<span class="pill ok">KEEP (+${ev.outsGain} out${ev.outsGain===1?'':'s'} → ${ev.outsAfter})</span>`
+                : `<span class="pill short">PASS (no gain)</span>`))
+      : `<span class="muted">${sc.lines.length}/3 lines</span>`;
+  const chips = sc.lines.map(k=>{
+    const want = ev ? ev.gained.includes(k) : missing.includes(k);
+    return chip(k, want ? 'need' : 'wasted');
+  }).join('');
+  const sockIcons = bothMode && se ? `<span class="socks">${se.sockets.map((c,i)=>sockIcon(c,se.hits[i]?'need':'wasted')).join('')}</span>` : '';
+  const sparks = win ? ['#ff8a4c','#f0a92b','#4cc38a','#2f9bd6','#7a5cf0','#d6409f','#fff','#4cc38a'].map((c,i)=>{
+    const a = (i/8)*Math.PI*2, r = 56 + (i%2)*20;
+    return `<span class="spark" style="background:${c};--dx:${Math.round(Math.cos(a)*r)}px;--dy:${Math.round(Math.sin(a)*r)}px;animation-delay:${(i*0.1).toFixed(2)}s"></span>`;
+  }).join('') : '';
+  paintHud(root, `<div class="hud ${cls}">${sparks}<div class="hud-top"><span class="hud-slot">${slot}</span>${verdict}</div><div class="row">${chips}${sockIcons}${ready&&!dup?`<span class="muted" style="font-size:11px;margin-left:auto">F7: Add</span>`:''}</div></div>`);
+}
+function evalItem(sc){
+  const base = solve(state.items);
+  const trial = state.items.map(a=>a.slice());
+  trial[sc.slot].push({id:-1, lines:sc.lines});
+  const r = solve(trial);
+  const gained = []; r.counts.forEach((c,i)=>{ for(let j=base.counts[i];j<c;j++) gained.push(STATS[i].k); });
+  return {before:base.best, after:r.best, gain:r.best-base.best, gained, outsBefore:base.hunt.length, outsAfter:r.hunt.length, outsGain:r.hunt.length-base.hunt.length};
+}
+let ovCelebrated = {}, ovCelInit = false, ovWinUntil = 0, ovWinTimer = null;
+function renderOverlay(){
+  if(!ovCelInit){ ovCelebrated = {...(state.celebrated||{})}; ovCelInit = true; }
+  const res = solve(state.items), sc = state.scan, bothMode = state.focus==='both', ss = bothMode ? evalSetSockets(res.picks) : null;
+  const linesDone = res.best===TOTAL, done = linesDone && (!bothMode || ss.done);
+  const celKey = (bothMode ? 'both:' : '') + state.build;
+  if(state.focus!=='sockets'){
+    if(done && !ovCelebrated[celKey]){
+      ovCelebrated[celKey] = true;
+      ovWinUntil = Date.now() + 20000;
+      clearTimeout(ovWinTimer);
+      ovWinTimer = setTimeout(()=>{ if(OV) renderOverlay(); }, 20050);
+      fireworks();
+    } else if(!done && ovCelebrated[celKey]){
+      delete ovCelebrated[celKey];
+      ovWinUntil = 0; clearTimeout(ovWinTimer);
+    }
+  }
+  const showWinFx = state.focus!=='sockets' && done && Date.now() < ovWinUntil;
+  const missing = []; res.counts.forEach((c,i)=>{ for(let j=c;j<T[i];j++) missing.push(STATS[i].k); });
+  let card = '';
+  if(state.scanStatus==='waiting') card = `<div class="ov-note">Hover the item now... (scanning in 1.5s)</div>`;
+  else if(state.scanStatus==='scanning') card = `<div class="ov-note">Reading tooltip...</div>`;
+  else if(state.scanError) card = `<div class="ov-note warn">${state.scanError}</div>`;
+  else if(!sc && state.lastAdded && Date.now()-state.lastAdded.at<2500){
+    const s = SLOTS[+state.lastAdded.sig.split(':')[1]] || 'item';
+    card = `<div class="verdict yes">✓ Added ${s} to your gear!</div>`;
+    scheduleHudRevert();
+  }
+  else if(!sc) card = `<div class="ov-note">Hover an item in game and press <b>F8</b> (or Scan).</div>`;
+  if(sc){
+    const wrongJob = sc.job && sc.job!==state.userJob;
+    if(wrongJob){
+      card = `<div class="ov-card">
+        <div class="verdict no">Wrong job: ${JOBS[sc.job].name} gear (you are ${JOBS[state.userJob].name}). Ignored.</div>
+        <div class="row"><button class="btn-dim" id="ov-dismiss" data-act="ov-dismiss">Dismiss</button></div></div>`;
+    } else if(state.focus==='sockets'){
+      const dup = hasDuplicate(sc);
+      const se = sc.sockets ? evalSockets(sc.sockets) : null;
+      const win = !dup && se && se.perfect;
+      card = `<div class="ov-card">
+        <div class="mini-tabs">${SLOTS.map((s,i)=>`<button id="ov-slot-${i}" data-act="ov-slot" data-i="${i}" aria-pressed="${sc.slot===i}">${s}</button>`).join('')}</div>
+        ${se ? `<div class="row">${se.sockets.map((c,i)=>sockChip(c,se.hits[i]?'need':'wasted')).join('')}</div>
+          <div class="verdict ${dup?'':win||se.score>=2?'yes':'no'}">${dup?'Already in your socket gear.':win?'★ 3/3 PERFECT SOCKETS ★':se.score>=2?`${se.score}/3 GOOD SOCKETS (${state.mainStat})`:`PASS (${se.score}/3 matching sockets)`}</div>`
+          : `<div class="ov-note warn">No jewel sockets detected on this item.</div>`}
+        <div class="row">${sc.sockets&&sc.slot!==null?`<button class="btn-add" data-act="ov-add-sock" ${dup?'disabled':''}>Add sockets (F7)</button>`:''}
+          <button class="btn-dim" id="ov-dismiss" data-act="ov-dismiss">Dismiss</button></div></div>`;
+    } else {
+      const ready = sc.slot!==null && sc.lines.length===3, dup = ready && hasDuplicate(sc), ev = ready && !dup ? evalItem(sc) : null;
+      const slotName = sc.slot===null ? 'item' : SLOTS[sc.slot].toLowerCase();
+      card = `<div class="ov-card">
+        <div class="mini-tabs">${SLOTS.map((s,i)=>`<button id="ov-slot-${i}" data-act="ov-slot" data-i="${i}" aria-pressed="${sc.slot===i}">${s}</button>`).join('')}</div>
+        <div class="row">${[0,1,2].map(i=>sc.lines[i]?chip(sc.lines[i]):`<span class="chip empty">line ${i+1}</span>`).join('')}
+          ${sc.lines.length?`<button class="ghost" id="ov-undo" data-act="ov-undo">Undo</button>`:''}</div>
+        ${sc.lines.length<3?`<div class="ov-note warn">Read ${sc.lines.length} of 3 lines${sc.slot===null?' and no slot':''}. Fix it below.</div>
+          <div class="row">${GROUPS.flat().map(k=>`<button class="chip s-${k} ${ICON[k]?'has-icon':''}" data-act="ov-line" data-k="${k}" ${k!=='other'&&sc.lines.includes(k)?'disabled':''}>${ICON[k]||''}${NAME[k]}</button>`).join('')}</div>`:''}
+        ${dup ? `<div class="ov-note">Already in your ${slotName} gear.</div>` : ev ? (ev.gain>0
+          ? `<div class="verdict yes">Keep it: ${ev.before} to ${ev.after} of ${TOTAL}${ev.after===TOTAL?' (set complete!)':''}${ev.outsGain>0?` (+${ev.outsGain} 1-drop outs)`:''}</div><div class="row">${ev.gained.map(k=>chip(k)).join('')}</div>`
+          : ev.outsGain>0
+            ? `<div class="verdict yes">Keep it: opens +${ev.outsGain} more 1-drop finish${ev.outsGain===1?'':'es'} (${ev.outsBefore}→${ev.outsAfter})</div>`
+            : `<div class="verdict no">No gain for ${slotName}. Leave it.</div>`) : ''}
+        ${sc.sockets?(()=>{ const se=evalSockets(sc.sockets); return `<div class="row"><span class="muted" style="font-size:11.5px">Sockets:</span>${se.sockets.map((c,i)=>sockIcon(c,se.hits[i]?'need':'wasted')).join('')}</div>`; })():''}
+        <div class="row"><button class="btn-add" id="ov-add" data-act="ov-add" ${ready&&!dup?'':'disabled'}>Add to my gear (F7)</button>
+          <button class="btn-dim" id="ov-dismiss" data-act="ov-dismiss">Dismiss</button></div></div>`;
+    }
+  }
+  let hunt = '';
+  if(state.focus==='sockets'){
+    syncItemSocketsToSockItems();
+    const picks = bestSockPicks();
+    const sScore = picks.reduce((sum,it)=>sum+(it?evalSockets(it.lines).score:0),0);
+    const needCnt = picks.filter(it=>!it || !evalSockets(it.lines).perfect).length;
+    hunt = `<div class="hunt"><span class="label">Best sockets per slot (${sScore}/18)</span>
+      ${needCnt?renderSockProbs(needCnt):''}
+      ${SLOTS.map((s,si)=>{ const it=picks[si]; const ev=it?evalSockets(it.lines):null;
+        return `<div class="opt"><b>${s}</b>${it?ev.sockets.map((c,j)=>sockChip(c,ev.hits[j]?'':'wasted')).join(''):`<span class="muted">none yet</span>`}</div>`; }).join('')}</div>`;
+  } else if(bothMode && !done){
+    hunt = renderBothStatusHtml(res, ss, missing, true);
+  } else if(!linesDone){
+    const list = res.hunt, LIMIT = 4;
+    const shown = state.huntOpen ? list : list.slice(0,LIMIT);
+    hunt = list.length ? `<div class="hunt"><div class="row spread"><span class="label">One drop finishes it (${list.length})</span>${list.length>LIMIT&&state.huntOpen?`<button class="ghost" data-act="hunt-toggle">Show fewer</button>`:''}</div>
+      ${renderProbs(list.length)}
+      ${shown.map(h=>`<div class="opt"><b>${SLOTS[h.slot]}</b>${h.need.map(k=>chip(k)).join('')}</div>`).join('')}
+      ${list.length>LIMIT?`<button class="ghost" id="hunt-toggle" data-act="hunt-toggle">${state.huntOpen?'Show fewer':`Show ${list.length-LIMIT} more`}</button>`:''}</div>`
+      : `<div class="hunt"><span class="label">Still missing</span><div class="opt">${missing.map(k=>chip(k)).join('')}</div></div>`;
+  } else {
+    hunt = `<div class="hunt"><span class="label">Equip these (${TOTAL}/${TOTAL})</span>
+      ${SLOTS.map((s,si)=>{ const it=res.picks[si];
+        return `<div class="opt"><b>${s}</b>${it?it.lines.map((k,j)=>chip(k,res.used[si][j]?'':'wasted')).join('')+(it.sockets?`<span class="socks">${it.sockets.map((c,j)=>sockIcon(c,bothMode&&ss.pickEv[si]?(ss.pickEv[si].hits[j]?'need':'wasted'):'')).join('')}</span>`:''):`<span class="muted">none</span>`}</div>`; }).join('')}</div>`;
+  }
+  const sockMode = state.focus==='sockets';
+  const picksSock = sockMode ? bestSockPicks() : null;
+  const sockScore = sockMode ? picksSock.reduce((sum,it)=>sum+(it?evalSockets(it.lines).score:0),0) : 0;
+  const totalGear = (sockMode ? state.sockItems : state.items).reduce((a,b)=>a+b.length,0);
+  const gearDrawer = state.gearOpen ? `<div class="hunt"><span class="label">${sockMode?'Your socket gear':'Your 3L gear'} (${totalGear})</span>
+    ${SLOTS.map((s,si)=>(sockMode?state.sockItems:state.items)[si].map((it,n)=>`<div class="opt"><b>${s} #${n+1}</b>${it.lines.map(k=>sockMode?sockChip(k):chip(k)).join('')}${!sockMode&&it.sockets?`<span class="socks">${it.sockets.map(c=>sockIcon(c)).join('')}</span>`:''}
+      <button class="x" data-act="${sockMode?'del-sock':'del'}" data-s="${si}" data-id="${it.id}" aria-label="Remove ${s} #${n+1}">&times;</button></div>`).join('')).join('') || `<span class="muted">No gear added yet.</span>`}</div>` : '';
+  document.getElementById('ov-root').innerHTML = `<div class="ov ${showWinFx?'win':''}">
+    <div class="ov-head"><h2>${sockMode?`Sockets <span class="muted" style="font-weight:500">${sockScore}/18</span>`:`3L Solver <span class="muted" style="font-weight:500">${res.best}/${TOTAL}${bothMode?` · ${ss.score}/18`:''}</span>`}</h2>
+      <div class="row">${BRIDGE?`<button class="ghost" id="ov-auto" data-act="ov-auto" aria-pressed="${state.auto}">${state.auto?'Auto':'Manual'}</button><button class="ghost" id="ov-scan" data-act="ov-scan">Scan</button>`:''}<button class="ghost" id="ov-close" data-act="ov-close" aria-label="Hide overlay (F9)">&times;</button></div></div>
+    <div class="row spread"><div class="row" style="gap:5px">${BRIDGE?`<button class="ghost" id="ov-main" data-act="ov-main">Full UI</button><button class="ghost" id="ov-gear" data-act="ov-gear" aria-pressed="${!!state.gearOpen}">Gear (${totalGear})</button>`:''}</div>
+      <div class="seg"><button data-act="focus" data-f="lines" aria-pressed="${state.focus==='lines'}">3L Lines</button><button data-act="focus" data-f="sockets" aria-pressed="${state.focus==='sockets'}">Sockets</button><button data-act="focus" data-f="both" aria-pressed="${state.focus==='both'}">3L+Sock</button></div></div>
+    ${state.focus!=='lines'?(()=>{ const sg=state.sockGoal||'pris2'; return `<div class="row spread"><span class="muted" style="font-size:11.5px">Socket Goal</span><div class="seg"><button data-act="sockgoal" data-g="pris2" aria-pressed="${sg==='pris2'}">Pris+2</button><button data-act="sockgoal" data-g="3class" aria-pressed="${sg==='3class'}">3× Class</button></div></div>`; })():''}
+    ${sockMode?'':`<div class="row spread"><span class="muted" style="font-size:11.5px">Build</span><div class="seg">${Object.entries(BUILDS).map(([k,b])=>`<button data-act="build" data-b="${k}" aria-pressed="${state.build===k}">${b.name}</button>`).join('')}</div></div>`}
+    <div class="row spread"><span class="muted" style="font-size:11.5px">Class (${state.mainStat})</span><div class="seg">${Object.entries(JOBS).map(([k,j])=>`<button data-act="ujob" data-j="${k}" aria-pressed="${state.userJob===k}">${k}</button>`).join('')}</div></div>
+    ${BRIDGE?(()=>{ const aa=state.autoAdd||'off'; return `<div class="row spread"><span class="muted" style="font-size:11.5px">Auto-Add</span>${autoAddSeg()}</div><div class="aa-tip" id="aa-tip"><b>${AUTO_ADD_LABEL[aa]}:</b> ${getAutoAddDesc(aa)}</div>`; })():''}
+    ${state.example?`<div class="ov-note warn">Showing example gear. Clear it in the main window.</div>`:''}
+    ${card}${hunt}${gearDrawer}${!sockMode&&done?(showWinFx?`<div class="pill win" style="text-align:center;padding:5px 10px">★ SET COMPLETE! ${TOTAL}/${TOTAL} ★</div>`:`<div class="verdict yes">Set complete!</div>`):''}</div>`;
+  if(BRIDGE){
+    const el = document.querySelector('.ov');
+    if(el) BRIDGE.resize(el.scrollHeight + 12);
+  }
+}
+if(OV && BRIDGE && document.fonts && document.fonts.ready){
+  document.fonts.ready.then(()=>{ const el=document.querySelector('.ov'); if(el) BRIDGE.resize(el.scrollHeight + 12); });
+}
+function syncFromStorage(){
+  try{ const raw = JSON.parse(localStorage.getItem(KEY));
+    if(raw && raw.checks && typeof raw.checks==='object') state.checks = raw.checks;
+    if(raw && raw.mainStat) state.mainStat = raw.mainStat;
+    if(raw && raw.userJob && JOBS[raw.userJob]) state.userJob = raw.userJob;
+    if(raw && raw.charClass) state.charClass = raw.charClass;
+    if(raw && raw.focus) state.focus = raw.focus;
+    if(raw && raw.sockGoal) state.sockGoal = raw.sockGoal;
+    if(raw && raw.autoAdd) state.autoAdd = raw.autoAdd;
+    if(raw && raw.lastAdded) state.lastAdded = raw.lastAdded;
+    if(raw && raw.dust && typeof raw.dust==='object') state.dust = raw.dust;
+    if(raw && raw.prismFd && typeof raw.prismFd==='object') state.prismFd = raw.prismFd;
+    if(raw && raw.leap && typeof raw.leap==='object') state.leap = raw.leap;
+    if(raw && raw.mapae && typeof raw.mapae==='object') state.mapae = raw.mapae;
+    if(raw && raw.gemExp && typeof raw.gemExp==='object') state.gemExp = raw.gemExp;
+    if(raw && raw.dng && typeof raw.dng==='object') state.dng = raw.dng;
+    if(raw && typeof raw.inspLv==='number') state.inspLv = raw.inspLv;
+    if(raw && Array.isArray(raw.scanLog)) state.scanLog = raw.scanLog;
+    if(raw && Array.isArray(raw.sockScanLog)) state.sockScanLog = raw.sockScanLog;
+    if(raw && raw.celebrated && typeof raw.celebrated==='object') state.celebrated = raw.celebrated;
+    if(raw && Array.isArray(raw.sockItems) && raw.sockItems.length===SLOTS.length){
+      state.sockItems = raw.sockItems.map(a=>a.map(x=>mk(x.lines||x)));
+    }
+    if(raw && raw.build && BUILDS[raw.build]){ state.build = raw.build; applyBuild(state.build); }
+    if(raw && !raw.example && Array.isArray(raw.items) && raw.items.length===SLOTS.length){
+      state.items = raw.items.map(a=>a.filter(x=>noDupes(Array.isArray(x)?x:x.lines)).map(x=>Array.isArray(x)?mk(x):mk(x.lines,x))); state.example = false;
+      syncItemSocketsToSockItems();
+    }
+  }catch(e){}
+}
+addEventListener('storage', e=>{ if(e.key===KEY){ syncFromStorage(); render(); } });
+if(BRIDGE) BRIDGE.onScan(msg=>{
+  if(msg.status==='waiting'){ state.scanStatus='waiting'; state.scanError=''; }
+  else if(msg.status==='scanning'){ if(msg.manual){ state.scanStatus='scanning'; state.scanError=''; } else return; }
+  else if(msg.status==='error'){ state.scanStatus=''; state.scanError='Scan failed: '+msg.error; }
+  else { state.scanStatus=''; state.scanError='';
+    if(!state.charClass){
+      const cc = QParse.detectCharClass(msg.text);
+      if(cc){ state.charClass = cc.className; state.mainStat = cc.mainStat; state.userJob = cc.job; save(); }
+    }
+    const p = QParse.parseTooltip(msg.text);
+    if(msg.sockets) p.sockets = msg.sockets;
+    if(msg.sockets && msg.sockets.includes('prismatic')) p.prismatic = true;
+    if(p.lines.length || p.slot!==null || p.sockets){ lastHudHtml = ''; state.scan = p; if(OV){ attachSocketsToExisting(p); recordScan(p); if(state.autoAdd && state.autoAdd!=='off' && tryAddScanned(p, state.autoAdd)){ state.scan = null; save(); } } }
+    else if(msg.manual){ state.scan = null; state.scanError = 'No hologram tooltip found near the cursor. Hover the item and try again.'; }
+    else return; }
+  state.huntOpen = false; render();
+});
+
+document.addEventListener('click', e=>{
+  const b = e.target.closest('[data-act]'); if(!b) return;
+  const act = b.dataset.act;
+  if(act!=='clear') state.confirmClear = false;
+  if(act==='hunt-toggle'){ state.huntOpen = !state.huntOpen; }
+  else if(act==='add-sock'){
+    state.pendSock.push(b.dataset.k);
+    if(state.pendSock.length===3){ state.sockItems[state.active].push(mk(state.pendSock)); state.pendSock=[]; }
+  }
+  else if(act==='undo-sock'){ state.pendSock.pop(); }
+  else if(act==='del-sock'){ const s=+b.dataset.s; state.sockItems[s]=state.sockItems[s].filter(i=>i.id!==+b.dataset.id); }
+  else if(act==='clear-sock'){ state.sockItems=SLOTS.map(()=>[]); state.pendSock=[]; }
+  else if(act==='ov-add-sock'){
+    syncFromStorage();
+    const sc = state.scan;
+    if(sc && sc.slot!==null && sc.sockets && sc.sockets.length===3){
+      state.sockItems[sc.slot].push(mk(sc.sockets.slice())); state.scan = null;
+    }
+  }
+  else if(act==='tab'){ state.tab = b.dataset.t; }
+  else if(act==='focus'){ state.focus = b.dataset.f; }
+  else if(act==='sockgoal'){ state.sockGoal = b.dataset.g; }
+  else if(act==='scan-reset'){ state.scanLog = []; }
+  else if(act==='sock-scan-reset'){ state.sockScanLog = []; }
+  else if(act==='insp'){ state.inspLv = Math.max(1, Math.min(200, (state.inspLv||1) + (+b.dataset.d))); }
+  else if(act==='pfd'){ if(!state.prismFd) state.prismFd={dl:0,wh:0}; const k=b.dataset.k; state.prismFd[k] = Math.max(0, Math.min(5, (+state.prismFd[k]||0) + (+b.dataset.d))); }
+  else if(act==='mapae-star'){ if(!state.mapae) state.mapae={stars:0,pot3l:false}; state.mapae.stars = Math.max(0, Math.min(22, (+state.mapae.stars||0) + (+b.dataset.d))); }
+  else if(act==='mapae-3l'){ if(!state.mapae) state.mapae={stars:0,pot3l:false}; state.mapae.pot3l = b.checked; }
+  else if(act==='gtier'){ getGemExpState().fodderTier = b.dataset.t; }
+  else if(act==='dng-sub'){ getDng().sub = b.dataset.s; }
+  else if(act==='dng-file'){ const d=getDng(); d.files[b.dataset.k] = b.checked; }
+  else if(act==='dng-miss'){ const d=getDng(); d.missions[b.dataset.k] = b.checked; }
+  else if(act==='dng-ov-open'){ if(BRIDGE && BRIDGE.openDungeonOverlay) BRIDGE.openDungeonOverlay(); return; }
+  else if(act==='open-ov'){ if(BRIDGE && BRIDGE.showOverlay) BRIDGE.showOverlay(); return; }
+  else if(act==='dng-ov-close'){ if(BRIDGE && BRIDGE.hideDungeonOverlay) BRIDGE.hideDungeonOverlay(); return; }
+  else if(act==='dng-ov-scan'){ if(BRIDGE && BRIDGE.scanDungeon) BRIDGE.scanDungeon(); return; }
+  else if(act==='dng-buff'){ const d=getDng(); d.buffs[b.dataset.k] = !d.buffs[b.dataset.k]; }
+  else if(act==='dng-room'){ const d=getDng(); d.roomsEntered=(d.roomsEntered||0)+1; d.weeklyPower=Math.max(0,(d.weeklyPower||0)-(d.drainPerRoom||5)); }
+  else if(act==='dng-wp-reset'){ const d=getDng(); d.weeklyPower=d.weeklyMax||150; d.roomsEntered=0; }
+  else if(act==='dng-pick'){ const d=getDng(), id=b.dataset.id, meta=DUNGEON_CODES.find(c=>c.id===id)||{}; if(meta.projectGroup){ d.ownedCodes=d.ownedCodes.filter(x=>!(DUNGEON_CODES.find(c=>c.id===x)||{}).projectGroup); } if(!d.ownedCodes.includes(id)) d.ownedCodes.push(id); d.offeredCodes=[]; if(d.ownedCodes.includes('broken_heart')&&d.ownedCodes.includes('creaking_limb')&&d.ownedCodes.includes('overheated_head')) d.fused=true; }
+  else if(act==='dng-own'){ const d=getDng(), id=b.dataset.id; d.ownedCodes = d.ownedCodes.includes(id) ? d.ownedCodes.filter(x=>x!==id) : [...d.ownedCodes, id]; if(id==='overclocked') d.fused = d.ownedCodes.includes('overclocked'); }
+  else if(act==='mstat'){ state.mainStat = b.dataset.s; }
+  else if(act==='ujob'){ state.userJob = b.dataset.j; state.mainStat = JOBS[state.userJob].stat; }
+  else if(act==='chk'){ state.checks[b.dataset.k] = b.checked; }
+  else if(act==='chk-reset'){ state.checks = {}; }
+  else if(act==='ov-main'){ BRIDGE.showMain(); return; }
+  else if(act==='build'){ state.build = b.dataset.b; applyBuild(state.build); }
+  else if(act==='ov-scan'){ BRIDGE.scan(); return; }
+  else if(act==='ov-gear'){ state.gearOpen = !state.gearOpen; }
+  else if(act==='ov-auto'){ state.auto = !state.auto; BRIDGE.setAuto(state.auto); }
+  else if(act==='autoadd'){ state.autoAdd = b.dataset.m; }
+  else if(act==='ov-close'){ BRIDGE.hideOverlay(); return; }
+  else if(act==='ov-slot'){ state.scan.slot = +b.dataset.i; state.huntOpen = false; }
+  else if(act==='ov-line'){ if(state.scan.lines.length<3) state.scan.lines.push(b.dataset.k); }
+  else if(act==='ov-undo'){ state.scan.lines.pop(); }
+  else if(act==='ov-dismiss'){ state.scan = null; state.scanError = ''; }
+  else if(act==='ov-add'){
+    syncFromStorage();
+    const sc = state.scan;
+    if(sc && sc.slot!==null && sc.lines.length===3 && noDupes(sc.lines)){
+      state.items[sc.slot].push(mk(sc.lines.slice(), {sockets:sc.sockets, prismatic:sc.prismatic}));
+      if(sc.sockets && sc.sockets.length===3) state.sockItems[sc.slot].push(mk(sc.sockets.slice()));
+      state.example = false; state.scan = null;
+    } else { state.scanError = 'A piece cannot have the same line twice. Fix the lines first.'; }
+  }
+  else if(act==='slot'){ state.active=+b.dataset.i; state.pending=[]; }
+  else if(act==='stat'){
+    if(b.dataset.k!=='other' && state.pending.includes(b.dataset.k)) return;
+    state.pending.push(b.dataset.k);
+    if(state.pending.length===3){ state.items[state.active].push(mk(state.pending)); state.pending=[]; state.example = state.example && false; }
+  }
+  else if(act==='undo'){ state.pending.pop(); }
+  else if(act==='del'){ const s=+b.dataset.s; state.items[s]=state.items[s].filter(i=>i.id!==+b.dataset.id); }
+  else if(act==='clear'){
+    if(state.confirmClear){ state.items=SLOTS.map(()=>[]); state.pending=[]; state.example=false; state.confirmClear=false; }
+    else state.confirmClear = true;
+  }
+  else if(act==='clear-now'){ state.items=SLOTS.map(()=>[]); state.pending=[]; state.example=false; }
+  save(); render();
+  const id = b.id; if(id){ const again=document.getElementById(id); if(again) again.focus({preventScroll:true}); }
+});
+const setAaTip = (m, hover) => {
+  const el = document.getElementById('aa-tip'); if(!el) return;
+  const k = m || state.autoAdd || 'off';
+  el.innerHTML = `<b>${AUTO_ADD_LABEL[k]}:</b> ${getAutoAddDesc(k)}`;
+  el.classList.toggle('hover', !!hover);
+};
+document.addEventListener('mouseover', e=>{ const b=e.target.closest('[data-act="autoadd"]'); if(b) setAaTip(b.dataset.m, true); });
+document.addEventListener('mouseout', e=>{ const b=e.target.closest('[data-act="autoadd"]'); if(b && !b.contains(e.relatedTarget)) setAaTip(null, false); });
+document.addEventListener('input', e=>{
+  const inp = e.target.closest('[data-dust],[data-leap],[data-gexp],[data-dng-q],[data-dng-num]'); if(!inp) return;
+  if(inp.dataset.dust){
+    if(!state.dust) state.dust = {cur:0, spare:0, per:100};
+    state.dust[inp.dataset.dust] = Math.max(0, +inp.value || 0);
+    const out = document.getElementById('dust-out'); if(out) out.innerHTML = dustCalcHtml();
+    const go = document.getElementById('gexp-out'); if(go) go.innerHTML = gemExpCalcHtml();
+  } else if(inp.dataset.leap){
+    if(!state.leap) state.leap = {cur:260, target:264};
+    state.leap[inp.dataset.leap] = Math.max(1, Math.min(300, +inp.value || 1));
+    const out = document.getElementById('leap-out'); if(out) out.innerHTML = leapCalcHtml();
+  } else if(inp.dataset.gexp){
+    const g = getGemExpState(), v = Math.max(0, +inp.value || 0);
+    if(inp.dataset.gexp.includes('.')){ const [obj,k]=inp.dataset.gexp.split('.'); g[obj][k] = obj==='tierExp' ? Math.max(1, v) : v; }
+    else g[inp.dataset.gexp] = v;
+    const go = document.getElementById('gexp-out'); if(go) go.innerHTML = gemExpCalcHtml();
+    const rem = Math.max(0, (+g.targetExp||0)-(+g.curExp||0));
+    GEM_TIERS.forEach(x=>{ const c=document.getElementById('grem-'+x.t); if(c) c.textContent = Math.ceil(rem/Math.max(1,+g.tierExp[x.t]||x.defExp)).toLocaleString()+' gems'; });
+  } else if(inp.hasAttribute('data-dng-q')){
+    const d = getDng(); d.q = inp.value || '';
+    const gl = document.getElementById('dng-gloss'); if(gl) gl.innerHTML = dngGlossaryHtml(d.q);
+  } else if(inp.dataset.dngNum){
+    const d = getDng(); d[inp.dataset.dngNum] = Math.max(0, Math.min(d.weeklyMax||150, +inp.value || 0));
+  }
+  save();
+});
+
+if(OV || HUD || DNG){ document.body.classList.add('ov-mode'); document.documentElement.dataset.theme='dark'; document.body.innerHTML='<div id="ov-root"></div>'; }
+else if(BRIDGE){ document.querySelector('header p').insertAdjacentHTML('afterend','<p>Overlay: hover an item in MapleStory and press <b>F8</b> to read it. <b>F9</b> shows or hides the overlay. Run the game in windowed or borderless mode.</p>'); }
+load(); render();
+</script>
+</body>
+</html>

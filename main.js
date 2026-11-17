@@ -5,9 +5,9 @@ const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-const PAGE = path.join(__dirname, '3L Set Solver.htm');
+const PAGE = path.join(__dirname, 'Quanah World Utilities.htm');
 const webPreferences = { preload: path.join(__dirname, 'preload.js'), contextIsolation: true };
-let mainWin, overlay, hud, ocrProc, ocrQueue = [], ocrReady = false;
+let mainWin, overlay, hud, dngWin, ocrProc, ocrQueue = [], ocrReady = false;
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
 function createWindows() {
@@ -17,12 +17,25 @@ function createWindows() {
 
   const { workArea } = screen.getPrimaryDisplay();
   overlay = new BrowserWindow({
-    width: 390, height: 260, x: workArea.x + workArea.width - 410, y: workArea.y + 60,
+    width: 430, height: 260, x: workArea.x + workArea.width - 450, y: workArea.y + 60,
     frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true,
     resizable: false, hasShadow: false, focusable: false, webPreferences
   });
   overlay.setAlwaysOnTop(true, 'screen-saver'); // stays above borderless-fullscreen games
   overlay.loadFile(PAGE, { query: { overlay: '1' } });
+  const sendOvState = () => {
+    if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send('overlay-state', !!(overlay && !overlay.isDestroyed() && overlay.isVisible()));
+  };
+  overlay.on('show', sendOvState);
+  overlay.on('hide', sendOvState);
+
+  dngWin = new BrowserWindow({
+    width: 390, height: 340, x: workArea.x + 20, y: workArea.y + 60, show: false,
+    frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true,
+    resizable: false, hasShadow: false, focusable: false, webPreferences
+  });
+  dngWin.setAlwaysOnTop(true, 'screen-saver');
+  dngWin.loadFile(PAGE, { query: { dungeon: '1' } });
 
   hud = new BrowserWindow({
     width: 320, height: 80, show: false, opacity: 0,
@@ -39,8 +52,9 @@ function createWindows() {
     globalShortcut.unregisterAll();
     if (ocrProc) { try { ocrProc.kill(); } catch (e) {} ocrProc = null; }
     if (hud && !hud.isDestroyed()) hud.destroy();
+    if (dngWin && !dngWin.isDestroyed()) dngWin.destroy();
     if (overlay && !overlay.isDestroyed()) overlay.destroy();
-    overlay = null; hud = null;
+    overlay = null; hud = null; dngWin = null;
     app.quit();
   });
 }
@@ -274,8 +288,58 @@ const hoverTimer = setInterval(() => {
       scannedAt = pt;
       scan(false);
     }
+    if (dngWin && !dngWin.isDestroyed() && dngWin.isVisible() && !scanning && !dngScanning && /maplestory/i.test(st.fg || '')) {
+      checkDungeonScreen();
+    }
   });
 }, 40);
+let dngScanning = false, dngWasBlack = false, lastDngCheckAt = 0, lastDngOcrAt = 0;
+async function checkDungeonScreen() {
+  const now = Date.now();
+  if (now - lastDngCheckAt < 350 || dngScanning) return;
+  lastDngCheckAt = now;
+  try {
+    const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 160, height: 90 } });
+    const src = sources.find(s => s.display_id === String(d.id)) || sources[0];
+    if (!src) return;
+    const bmp = src.thumbnail.toBitmap();
+    let sum = 0;
+    for (let i = 0; i < bmp.length; i += 16) sum += bmp[i] + bmp[i + 1] + bmp[i + 2];
+    const avg = sum / ((bmp.length / 16) * 3);
+    if (avg < 18) { dngWasBlack = true; return; }
+    if (dngWasBlack && avg > 38) {
+      dngWasBlack = false;
+      await delay(300);
+      return scanDungeonScreen('room');
+    }
+    if (now - lastDngOcrAt >= 1200) {
+      lastDngOcrAt = now;
+      scanDungeonScreen('auto');
+    }
+  } catch (e) {}
+}
+async function scanDungeonScreen(trigger = 'manual') {
+  if (dngScanning || !dngWin || dngWin.isDestroyed()) return;
+  dngScanning = true;
+  try {
+    const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const sf = d.scaleFactor || 1;
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'], thumbnailSize: { width: Math.round(d.size.width * sf), height: Math.round(d.size.height * sf) }
+    });
+    const src = sources.find(s => s.display_id === String(d.id)) || sources[0];
+    if (!src) return;
+    let img = src.thumbnail;
+    if (sf < 2) { const s = img.getSize(); img = img.resize({ width: Math.min(2560, Math.round(s.width * 1.5)), quality: 'best' }); }
+    const text = await recognizeBMP(toHighContrastBMP(img));
+    if (dngWin && !dngWin.isDestroyed()) {
+      dngWin.webContents.send('dng-scan-result', { status: 'done', text, trigger, at: Date.now() });
+    }
+  } catch (e) {
+    if (dngWin && !dngWin.isDestroyed()) dngWin.webContents.send('dng-scan-result', { status: 'error', error: String(e && e.message || e) });
+  } finally { dngScanning = false; }
+}
 async function scan(fromUI = false) {
   if (scanning || !overlay) return;
   scanning = true;
@@ -313,7 +377,8 @@ app.whenReady().then(() => {
     const b = overlay.getBounds();
     const wa = screen.getDisplayNearestPoint({ x: b.x, y: b.y }).workArea;
     const maxH = Math.max(200, wa.y + wa.height - b.y - 12);
-    overlay.setBounds({ x: b.x, y: b.y, width: 390, height: Math.min(Math.ceil(h), maxH) });
+    const nextH = Math.min(Math.ceil(h), maxH);
+    if (b.height !== nextH || b.width !== 430) overlay.setBounds({ x: b.x, y: b.y, width: 430, height: nextH });
   });
   ipcMain.on('hud-show', (_e, w, h) => {
     if (!hud || !scannedAt) return;
@@ -338,6 +403,17 @@ app.whenReady().then(() => {
     }
   });
   ipcMain.on('overlay-show', () => overlay && overlay.showInactive());
+  ipcMain.handle('overlay-visible', () => !!(overlay && !overlay.isDestroyed() && overlay.isVisible()));
+  ipcMain.on('dng-overlay-show', () => { if (dngWin && !dngWin.isDestroyed()) dngWin.showInactive(); });
+  ipcMain.on('dng-overlay-hide', () => { if (dngWin && !dngWin.isDestroyed()) dngWin.hide(); });
+  ipcMain.on('dng-overlay-resize', (_e, h) => {
+    if (!dngWin || dngWin.isDestroyed() || !(h > 0)) return;
+    const b = dngWin.getBounds();
+    const wa = screen.getDisplayNearestPoint({ x: b.x, y: b.y }).workArea;
+    const maxH = Math.max(220, wa.y + wa.height - b.y - 12);
+    dngWin.setBounds({ x: b.x, y: b.y, width: 390, height: Math.min(Math.ceil(h), maxH) });
+  });
+  ipcMain.handle('dng-scan', () => scanDungeonScreen('manual'));
 });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); if (ocrProc) ocrProc.kill(); });
 app.on('window-all-closed', () => app.quit());
