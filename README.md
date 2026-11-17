@@ -1,4 +1,4 @@
-# Quanah World Utilities (v0.1.2)
+# Quanah World Utilities (v0.1.4)
 
 A desktop overlay, real-time item scanner, and progression companion for **MapleStory Quanah World**.
 
@@ -6,10 +6,12 @@ A desktop overlay, real-time item scanner, and progression companion for **Maple
 
 ## Download & Web Tool
 
-- **Desktop App (with In-Game Overlay & Scanner):** Download from **[Releases](https://github.com/Altord/QuanahWorldUtilities/releases)**:
-  - `Quanah World Utilities 0.1.2.exe` — Portable standalone `.exe` (double-click to run, no installation needed).
-  - `Quanah World Utilities Setup 0.1.2.exe` — Standard Windows installer.
-- **Web Tool (No Download):** All tabs (**3L Solver**, **Socket Focus**, **Pre-Leap**, **Jewels**, **Dungeon**, **Progression**) also run directly in any browser via **[GitHub Pages](https://altord.github.io/QuanahWorldUtilities/)** or by opening `3L Set Solver.htm` locally (without the in-game screen scanner).
+- **Web Tool (No Download):** **[Open Quanah World Utilities Web App](https://altord.github.io/QuanahWorldUtilities/)**
+  - Includes all manual calculators and guides (**3L Solver**, **Socket Focus**, **Pre-Leap**, **Jewels**, **Dungeon**, **Progression**).
+  - **Note:** The **in-game overlay, cursor HUD, Auto-Add, and screen OCR scanner do not work in a web browser** — browsers cannot capture the game screen or draw over MapleStory. Use the Windows Desktop App below if you want live in-game scanning.
+- **Desktop App (with In-Game Overlay & Scanner):** Download from **[Releases](https://github.com/Altord/QuanahWorldUtilities/releases)** (no Administrator privileges required):
+  - `Quanah World Utilities 0.1.4.exe` — Portable standalone `.exe` (double-click to run, no installation needed).
+  - `Quanah World Utilities Setup 0.1.4.exe` — Standard Windows installer.
 
 > **Important:** Run MapleStory in **Windowed** or **Borderless** mode so the overlay and cursor HUD can render on top of the game.
 
@@ -34,10 +36,16 @@ A desktop overlay, real-time item scanner, and progression companion for **Maple
 
 ![In-Game Overlay](docs/overlay.png)
 
-- Stays on top of MapleStory in the corner without stealing focus.
+- Stays on top of MapleStory in the corner without stealing focus (no Admin privileges needed).
+- **Auto-Add Modes (`Off | Any | 3/3 Build | +Gain/Outs | 3/3+Gain`):**
+  - **`Off`** — Hover to preview only; click **Add** (or press `F7`) to save.
+  - **`Any`** — Adds every valid item for your class (even with `Other`/unused lines).
+  - **`3/3 Build`** — Fastest for **18/18**; banks every clean 3-line piece (no `Other` lines) so future slot combos aren't missed.
+  - **`+Gain/Outs`** — Saves any item that immediately raises your score or 1-drop outs.
+  - **`3/3+Gain`** — Best near **18/18**; saves only clean 3-line pieces that also raise score/outs now.
 - **Hotkeys:**
-  - **`F8`** — Scan the item tooltip under your cursor (or leave **Auto** on to scan automatically after hovering ~0.15s).
-  - **`F7`** — Quick-add the currently hovered item to your gear without moving your mouse.
+  - **`F8`** — Scan the item tooltip under your cursor (or leave **Auto** on to scan automatically on hover).
+  - **`F7`** — Quick-add the currently hovered item (when not blocked by an elevated game window; use **Auto-Add** otherwise).
   - **`F9`** — Show or hide the overlay.
 - Click **`Full UI`** to bring up the main window, **`Gear (N)`** to inspect/remove saved pieces right inside the overlay, or **`3L Lines | Sockets`** to swap modes on the fly.
 
