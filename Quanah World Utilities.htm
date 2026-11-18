@@ -366,6 +366,7 @@ function load(){
     if(raw && raw.mapae && typeof raw.mapae==='object') state.mapae = raw.mapae;
     if(raw && raw.gemExp && typeof raw.gemExp==='object') state.gemExp = raw.gemExp;
     if(raw && raw.dng && typeof raw.dng==='object') state.dng = raw.dng;
+    if(raw && raw.jwl && typeof raw.jwl==='object') state.jwl = raw.jwl;
     if(raw && typeof raw.inspLv==='number') state.inspLv = raw.inspLv;
     if(raw && Array.isArray(raw.scanLog)) state.scanLog = raw.scanLog;
     if(raw && Array.isArray(raw.sockScanLog)) state.sockScanLog = raw.sockScanLog;
@@ -587,10 +588,52 @@ function renderPreLeap(){
     <div id="leap-out">${leapCalcHtml()}</div>
   </div>`;
 }
+const DUST_CAP = 30000;
+const JWL_LEVELS = [
+  { from: 1, to: 2, req: 5, stat: '+100 Main, +100 Sec (Gray: +100 Main, +20 ATT)' },
+  { from: 2, to: 3, req: 9, stat: '+150 Main, +150 Sec (Gray: +150 Main, +30 ATT)' }
+];
+function getDustState(){
+  const d = state.dust || (state.dust = {cur:0, spareColor:0, sparePris:0, fuseTech:true});
+  if(d.spareColor===undefined) d.spareColor = +d.spare||0;
+  if(d.sparePris===undefined) d.sparePris = 0;
+  if(d.fuseTech===undefined) d.fuseTech = true;
+  return d;
+}
+function getJwl(){
+  const j = state.jwl || (state.jwl = { dustOwned:0, curLv:1, tgtLv:2, goalLv:3, matUsed:0, matReq:5, matOwned:0, fodderType:'color', jewelColor:'', jewelLv:1, stepReqs:{1:5,2:9,3:18,4:36}, lastScanAt:0 });
+  if(!j.curLv) j.curLv = 1;
+  if(!j.tgtLv) j.tgtLv = j.curLv + 1;
+  if(!j.goalLv || j.goalLv <= j.curLv) j.goalLv = Math.min(5, Math.max(j.curLv + 1, j.goalLv || 3));
+  if(!j.stepReqs) j.stepReqs = {1:5,2:9,3:18,4:36};
+  if(!j.stepReqs[3]) j.stepReqs[3] = 18;
+  if(!j.stepReqs[4]) j.stepReqs[4] = 36;
+  if(!j.matReq) j.matReq = j.stepReqs[j.curLv] || 0;
+  if(!j.fodderType) j.fodderType = 'color';
+  return j;
+}
+function jwlStepReq(j, lv){
+  if(lv===1) return 5;
+  if(lv===2) return 9;
+  const def = lv===3 ? 18 : lv===4 ? 36 : 0;
+  return Math.max(0, +((j.stepReqs && j.stepReqs[lv]) || (lv===j.curLv ? j.matReq : 0) || def) || 0);
+}
+function jwlCumulative(fromLv, toLv, j){
+  let sum = 0, unknown = 0;
+  for(let lv=fromLv; lv<toLv; lv++){
+    const r = jwlStepReq(j, lv);
+    if(r > 0) sum += r; else unknown++;
+  }
+  return { sum, unknown };
+}
 function dustCalcHtml(){
   syncItemSocketsToSockItems();
-  const d = state.dust || (state.dust = {cur:0, spare:0, per:100});
-  const totalDust = Math.max(0, (+d.cur||0) + (+d.spare||0) * (+d.per||0));
+  const d = getDustState();
+  const colorPer = d.fuseTech ? 225 : 125;
+  const prisPer = d.fuseTech ? 850 : 750;
+  const fromExtracts = (+d.spareColor||0) * colorPer + (+d.sparePris||0) * prisPer;
+  const totalDust = Math.max(0, (+d.cur||0) + fromExtracts);
+  const effectiveDust = Math.min(DUST_CAP, totalDust);
   const picks = bestSockPicks();
   const prismHave = picks.filter(it => it && evalSockets(it.lines).hasPrism).length;
   const score = picks.reduce((sum, it) => sum + (it ? evalSockets(it.lines).score : 0), 0);
@@ -599,17 +642,17 @@ function dustCalcHtml(){
   const needStat = Math.max(0, 12 - statHave);
   const dustNeeded = needPrism * 3000 + needStat * 500;
   const diff = totalDust - dustNeeded;
-  const canPrism = Math.floor(totalDust / 3000);
-  const canColor = Math.floor(totalDust / 500);
+  const canPrism = Math.floor(effectiveDust / 3000);
+  const canColor = Math.floor(effectiveDust / 500);
   const buyPrism = Math.min(needPrism, canPrism);
-  const leftAfterPrism = totalDust - buyPrism * 3000;
+  const leftAfterPrism = effectiveDust - buyPrism * 3000;
   const buyStat = Math.min(needStat, Math.floor(leftAfterPrism / 500));
   const match = JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join(' / ');
   return `<div class="calc-grid">
     <div class="calc-box">
-      <span class="label">Total Available Dust</span>
-      <div class="calc-kpi">${totalDust.toLocaleString()}</div>
-      <span class="muted" style="font-size:12px">Craftable now: <b>${canPrism}</b> Prismatic (3,000) or <b>${canColor}</b> Colored (500)</span>
+      <span class="label">Total Available Dust (Cap 30,000)</span>
+      <div class="calc-kpi ${totalDust>DUST_CAP?'warn':''}">${totalDust.toLocaleString()} <span class="muted" style="font-size:13px;font-weight:500">/ 30,000</span></div>
+      <span class="muted" style="font-size:12px">${totalDust>DUST_CAP?`<b>Over 30,000 cap by ${(totalDust-DUST_CAP).toLocaleString()}!</b> Spend Dust before extracting.`:`Craftable now: <b>${canPrism}</b> Prismatic (3,000) or <b>${canColor}</b> Colored (500)`}</span>
     </div>
     <div class="calc-box">
       <span class="label">Missing from Socket Focus (${state.mainStat})</span>
@@ -623,93 +666,113 @@ function dustCalcHtml(){
     </div>
   </div>`;
 }
-const GEM_TIERS = [
-  {t:'Normal', c:'#9ca3af', defExp:50, defDust:50},
-  {t:'Rare', c:'#60a5fa', defExp:150, defDust:100},
-  {t:'Epic', c:'#a78bfa', defExp:400, defDust:250},
-  {t:'Unique', c:'#fbbf24', defExp:1000, defDust:500},
-  {t:'Legendary', c:'#34d399', defExp:2500, defDust:1000}
-];
-function getGemExpState(){
-  if(!state.gemExp) state.gemExp = {curExp:0, targetExp:1000, fodderTier:'Rare', tierExp:{Normal:50,Rare:150,Epic:400,Unique:1000,Legendary:2500}, tierDust:{Normal:50,Rare:100,Epic:250,Unique:500,Legendary:1000}};
-  if(!state.gemExp.tierExp) state.gemExp.tierExp = {Normal:50,Rare:150,Epic:400,Unique:1000,Legendary:2500};
-  if(!state.gemExp.tierDust) state.gemExp.tierDust = {Normal:50,Rare:100,Epic:250,Unique:500,Legendary:1000};
-  return state.gemExp;
-}
-function gemExpCalcHtml(){
-  const g = getGemExpState(), d = state.dust || {cur:0,spare:0,per:100};
-  const totalDust = Math.max(0, (+d.cur||0) + (+d.spare||0) * (+d.per||0));
-  const remExp = Math.max(0, (+g.targetExp||0) - (+g.curExp||0));
-  const tier = GEM_TIERS.find(x=>x.t===g.fodderTier) || GEM_TIERS[1];
-  const expPerGem = Math.max(1, +g.tierExp[tier.t] || tier.defExp);
-  const dustPerGem = Math.max(0, +g.tierDust[tier.t] || tier.defDust);
-  const gemsNeeded = Math.ceil(remExp / expPerGem);
-  const dustEquiv = gemsNeeded * dustPerGem;
-  const gemsFromDust = Math.floor(totalDust / 500);
-  const dustShort = Math.max(0, gemsNeeded * 500 - totalDust);
+function jewelLevelCalcHtml(){
+  const j = getJwl(), d = getDustState();
+  const colorPer = d.fuseTech ? 225 : 125, prisPer = d.fuseTech ? 850 : 750;
+  const totalDust = Math.min(DUST_CAP, Math.max(0, (+d.cur||0) + (+d.spareColor||0)*colorPer + (+d.sparePris||0)*prisPer));
+  const goalLv = Math.max(j.curLv + 1, Math.min(5, +j.goalLv || 3));
+  const req = jwlStepReq(j, j.curLv);
+  const used = req ? Math.max(0, Math.min(req, +j.matUsed||0)) : Math.max(0, +j.matUsed||0);
+  const unitCost = j.fodderType==='pris' ? 3000 : 500;
+  const fromOne = jwlCumulative(1, goalLv, j);
+  const fromCur = jwlCumulative(j.curLv, goalLv, j);
+  const remToGoal = Math.max(0, fromCur.sum - used);
+  const craftDust = remToGoal * unitCost;
+  const dustShort = Math.max(0, craftDust - totalDust);
   return `<div class="calc-grid">
     <div class="calc-box">
-      <span class="label">Remaining EXP Needed</span>
-      <div class="calc-kpi">${remExp.toLocaleString()}</div>
-      <span class="muted" style="font-size:12px">Feeding <b>${tier.t}</b> gems (${expPerGem.toLocaleString()} EXP each)</span>
+      <span class="label">Total Lv. 1 &rarr; Lv. ${goalLv}</span>
+      <div class="calc-kpi">${fromOne.sum}${fromOne.unknown?'+?':''} <span class="muted" style="font-size:13px;font-weight:500">jewels</span></div>
+      <span class="muted" style="font-size:12px">Remaining from Lv.${j.curLv} (${used} used): <b>${remToGoal}${fromCur.unknown?'+?':''}</b> jewels</span>
     </div>
     <div class="calc-box">
-      <span class="label">Approx. Gems Needed</span>
-      <div class="calc-kpi ${gemsNeeded===0?'ok':''}">${gemsNeeded.toLocaleString()} <span class="muted" style="font-size:13px;font-weight:500">${tier.t}</span></div>
-      <span class="muted" style="font-size:12px">Extract value: ~<b>${dustEquiv.toLocaleString()}</b> Dust (${dustPerGem} ea)</span>
+      <span class="label">Craft Cost (Remaining to Lv.${goalLv})</span>
+      <div class="calc-kpi">${craftDust.toLocaleString()}${fromCur.unknown?'+?':''} <span class="muted" style="font-size:13px;font-weight:500">Dust</span></div>
+      <span class="muted" style="font-size:12px">Total Lv.1&rarr;${goalLv}: <b>${(fromOne.sum*unitCost).toLocaleString()}</b> Dust (${j.fodderType==='pris'?'Prismatic':'Colored'})</span>
     </div>
     <div class="calc-box">
-      <span class="label">Vs. Current Stardust (${totalDust.toLocaleString()})</span>
+      <span class="label">Vs. Current Dust (${totalDust.toLocaleString()})</span>
       <div class="calc-kpi ${dustShort===0?'ok':'warn'}">${dustShort===0?'Covered by Dust':`${dustShort.toLocaleString()} Dust short`}</div>
-      <span class="muted" style="font-size:12px">Current Dust buys <b>${gemsFromDust}</b> Colored (500 ea) · Need <b>${Math.max(0,gemsNeeded-gemsFromDust)}</b> more</span>
+      <span class="muted" style="font-size:12px">Need ~<b>${Math.ceil(dustShort/colorPer)}</b> trash Colored (${colorPer} ea) or <b>${Math.ceil(dustShort/prisPer)}</b> trash Pris (${prisPer} ea)</span>
     </div>
   </div>`;
 }
 function renderJewels(){
   const match = JEWELS.filter(j=>j.main===state.mainStat).map(j=>j.color).join(' / ');
   const prismCount = state.items.flat().filter(i=>i.prismatic).length;
-  const d = state.dust || (state.dust = {cur:0, spare:0, per:100});
-  const g = getGemExpState();
-  document.getElementById('tab-guide').innerHTML = `<div class="panel">
-    <div class="row spread"><h2>Jewels & Sockets</h2>
-      <div class="row"><span class="label">Your Main Stat</span>
-        <div class="seg">${['STR','DEX','LUK','INT'].map(st=>`<button data-act="mstat" data-s="${st}" aria-pressed="${state.mainStat===st}">${st}</button>`).join('')}</div>
+  const d = getDustState(), j = getJwl();
+  const colorPer = d.fuseTech ? 225 : 125, prisPer = d.fuseTech ? 850 : 750;
+  const req = jwlStepReq(j, j.curLv);
+  const fCol = j.fCol || 'all', fStat = j.fStat || 'all';
+  const totalScanned = (j.scannedJewels||[]).reduce((s,x)=>s+x.count,0);
+  document.getElementById('tab-guide').innerHTML = `<div style="display:flex;flex-direction:column;gap:14px">
+    <div class="panel">
+      <div class="row spread"><h2>Jewels & Sockets</h2>
+        <div class="row">
+          ${BRIDGE?`<button class="ghost" data-act="jwl-ov-open">Launch Jewel Overlay</button>`:''}
+          <span class="label">Your Main Stat</span>
+          <div class="seg">${['STR','DEX','LUK','INT'].map(st=>`<button data-act="mstat" data-s="${st}" aria-pressed="${state.mainStat===st}">${st}</button>`).join('')}</div>
+        </div>
       </div>
+      <div class="note-box">Best jewel color for <b>${state.mainStat}</b>: <b>${match}</b>. You currently have <b>${prismCount}</b> piece${prismCount===1?'':'s'} tagged with a 💎 Prismatic socket. Each jewel rolls <b>any 2 stats</b> from its pool (Blue rolls Magic ATT only, never ATT).</div>
+      <table class="jtable"><thead><tr><th>Jewel Color</th><th>Attack Stat</th><th>Main Stat</th><th>Secondary Stat</th><th>Tertiary (HP / MP)</th></tr></thead>
+        <tbody>${JEWELS.map(jw=>`<tr class="${jw.main===state.mainStat?'match':''}"><td><span class="jdot" style="background:${jw.hex}"></span>${jw.color}</td><td>${jw.atk}</td><td>${jw.main}</td><td>${jw.sec}</td><td>Max HP / Max MP (+1,000/lv)</td></tr>`).join('')}</tbody>
+      </table>
     </div>
-    <div class="note-box">Best jewel color for <b>${state.mainStat}</b>: <b>${match}</b>. You currently have <b>${prismCount}</b> piece${prismCount===1?'':'s'} tagged with a 💎 Prismatic socket.</div>
-    <table class="jtable"><thead><tr><th>Jewel Color</th><th>Attack Stat</th><th>Main Stat</th><th>Secondary Stat</th></tr></thead>
-      <tbody>${JEWELS.map(j=>`<tr class="${j.main===state.mainStat?'match':''}"><td><span class="jdot" style="background:${j.hex}"></span>${j.color}</td><td>${j.atk}</td><td>${j.main}</td><td>${j.sec}</td></tr>`).join('')}</tbody>
-    </table>
-    <div class="row spread" style="margin-top:4px"><h2>Jewel Dust & Crafting Calculator</h2><span class="muted" style="font-size:12px">Colored = 500 Dust · Prismatic = 3,000 Dust</span></div>
-    <div class="calc-grid">
-      <label class="calc-field">Current Jewel Dust<input type="number" min="0" step="50" data-dust="cur" value="${+d.cur||0}"></label>
-      <label class="calc-field">Spare Jewels to Extract<input type="number" min="0" step="1" data-dust="spare" value="${+d.spare||0}"></label>
-      <label class="calc-field">Dust per Extracted Jewel<input type="number" min="0" step="10" data-dust="per" value="${d.per!==undefined?+d.per:100}"></label>
+    <div class="panel">
+      <div class="row spread"><h2>Jewel Leveling Cost & Stat Scaling</h2>
+        <div class="row">
+          <div class="seg"><button data-act="jwl-lv" data-lv="1" aria-pressed="${j.curLv===1}">Lv.1</button><button data-act="jwl-lv" data-lv="2" aria-pressed="${j.curLv===2}">Lv.2</button><button data-act="jwl-lv" data-lv="3" aria-pressed="${j.curLv===3}">Lv.3</button><button data-act="jwl-lv" data-lv="4" aria-pressed="${j.curLv===4}">Lv.4</button></div>
+          <span class="muted" style="font-size:12px">&rarr; Goal:</span>
+          <div class="seg">${[2,3,4,5].map(gl=>`<button data-act="jwl-goal" data-gl="${gl}" aria-pressed="${(+j.goalLv||3)===gl}" ${gl<=j.curLv?'disabled':''}>Lv.${gl}</button>`).join('')}</div>
+          <div class="seg"><button data-act="jwl-type" data-t="color" aria-pressed="${j.fodderType==='color'}">Colored (500)</button><button data-act="jwl-type" data-t="pris" aria-pressed="${j.fodderType==='pris'}">Prismatic (3,000)</button></div>
+        </div>
+      </div>
+      <table class="jtable"><thead><tr><th>Level</th><th>Upgrade Cost</th><th>Colored Jewel Stats</th><th>Gray Jewel Stats</th></tr></thead>
+        <tbody>
+          <tr><td>Lv. 1</td><td>Base</td><td>+50 Main, +50 Sec</td><td>+50 Main, +10 ATT</td></tr>
+          <tr class="${j.curLv===1?'match':''}"><td>Lv. 2</td><td><b>5</b> jewels (Lv. 1 &rarr; 2)</td><td>+100 Main, +100 Sec</td><td>+100 Main, +20 ATT</td></tr>
+          <tr class="${j.curLv===2?'match':''}"><td>Lv. 3</td><td><b>9</b> jewels (Lv. 2 &rarr; 3 · 14 total)</td><td>+150 Main, +150 Sec</td><td>+150 Main, +30 ATT</td></tr>
+          <tr class="${j.curLv===3?'match':''}"><td>Lv. 4</td><td><b>18</b> jewels (Lv. 3 &rarr; 4 · 32 total)</td><td>+200 Main, +200 Sec</td><td>+200 Main, +40 ATT</td></tr>
+          <tr class="${j.curLv===4?'match':''}"><td>Lv. 5 (Max)</td><td><b>36</b> jewels (est. Lv. 4 &rarr; 5 · 68 total)</td><td>+300 Main, +300 Sec</td><td>+300 Main, +100 ATT</td></tr>
+        </tbody>
+      </table>
+      <div class="calc-grid">
+        <label class="calc-field">Materials Used (0–${req||'?'})<input type="number" min="0" max="${req||99}" step="1" data-jwl-num="matUsed" value="${req?Math.min(req,+j.matUsed||0):(+j.matUsed||0)}"></label>
+        ${j.curLv>=3?`<label class="calc-field">Step ${j.curLv}&rarr;${j.curLv+1} Req<input type="number" min="0" max="99" step="1" data-jwl-num="matReq" value="${req||''}" placeholder="?"></label>`:''}
+        <label class="calc-field">Materials Owned (Fodder)<input type="number" min="0" step="1" data-jwl-num="matOwned" value="${+j.matOwned||0}"></label>
+      </div>
+      <div id="jwl-lv-out">${jewelLevelCalcHtml()}</div>
     </div>
-    <div id="dust-out">${dustCalcHtml()}</div>
-    <div class="row spread" style="margin-top:4px"><h2>Gem Tier List & Leveling EXP Estimator</h2>
-      <div class="seg">${GEM_TIERS.map(x=>`<button data-act="gtier" data-t="${x.t}" aria-pressed="${g.fodderTier===x.t}">${x.t}</button>`).join('')}</div>
+    <div class="panel">
+      <div class="row spread"><h2>Registered / Scanned Jewels (${totalScanned})</h2>
+        <div class="row">${totalScanned?`<button class="ghost" data-act="jwl-tt-clear">Clear List</button>`:''}</div>
+      </div>
+      <div class="row spread" style="gap:8px;flex-wrap:wrap">
+        <input type="search" data-jwl-q placeholder="Search recorded jewels (e.g. Red, STR, ATT, HP)..." value="${(j.q||'').replace(/"/g,'&quot;')}" style="flex:1;min-width:220px;background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:6px 10px;color:var(--fg);font:inherit">
+        <div class="seg">${['all','Red','Blue','Green','Purple','Gray','Prismatic'].map(c=>`<button data-act="jwl-fcol" data-c="${c}" aria-pressed="${fCol===c}">${c==='all'?'All Colors':c}</button>`).join('')}</div>
+        <div class="seg">${['all','STR','DEX','LUK','INT','ATT','MATT','HP'].map(st=>`<button data-act="jwl-fstat" data-s="${st}" aria-pressed="${fStat===st}">${st==='all'?'All Stats':st}</button>`).join('')}</div>
+      </div>
+      <div id="jwl-tab-tt-list" style="display:flex;flex-direction:column;gap:6px;max-height:240px;overflow-y:auto;padding-right:4px">${jewelScannedListHtml(j, true)}</div>
     </div>
-    <table class="jtable"><thead><tr><th>Gem Tier</th><th>EXP per Gem</th><th>Extract Dust</th><th>Est. Gems for Remaining EXP</th></tr></thead>
-      <tbody>${GEM_TIERS.map(x=>{
-        const ev = Math.max(1, +g.tierExp[x.t]||x.defExp), dv = Math.max(0, +g.tierDust[x.t]||x.defDust);
-        const rem = Math.max(0, (+g.targetExp||0)-(+g.curExp||0));
-        return `<tr class="${g.fodderTier===x.t?'match':''}">
-          <td><span class="jdot" style="background:${x.c}"></span>${x.t}</td>
-          <td><input type="number" min="1" step="10" data-gexp="tierExp.${x.t}" value="${ev}" style="width:90px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit"></td>
-          <td><input type="number" min="0" step="10" data-gexp="tierDust.${x.t}" value="${dv}" style="width:90px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit"></td>
-          <td id="grem-${x.t}">${Math.ceil(rem/ev).toLocaleString()} gems</td></tr>`;
-      }).join('')}</tbody>
-    </table>
-    <div class="calc-grid">
-      <label class="calc-field">Current Gem EXP<input type="number" min="0" step="50" data-gexp="curExp" value="${+g.curExp||0}"></label>
-      <label class="calc-field">Target Level Total EXP<input type="number" min="0" step="50" data-gexp="targetExp" value="${+g.targetExp||1000}"></label>
+    <div class="panel">
+      <div class="row spread"><h2>Jewel Dust & 1-Fuse Farming Calculator</h2>
+        <div class="row"><button class="tag" data-act="jwl-fuse-tech" aria-pressed="${!!d.fuseTech}">1-Fuse Tech: ${d.fuseTech?'ON (+100/ea)':'OFF (Normal)'}</button><span class="muted" style="font-size:12px">Cap: 30,000 · Colored = 500 · Pris = 3,000</span></div>
+      </div>
+      <div class="calc-grid">
+        <label class="calc-field">Current Jewel Dust (0–30,000)<input type="number" min="0" max="30000" step="25" data-dust="cur" value="${+d.cur||0}"></label>
+        <label class="calc-field">Trash Colored Jewels (${colorPer} Dust ea)<input type="number" min="0" step="1" data-dust="spareColor" value="${+d.spareColor||0}"></label>
+        <label class="calc-field">Trash Prismatic Jewels (${prisPer} Dust ea)<input type="number" min="0" step="1" data-dust="sparePris" value="${+d.sparePris||0}"></label>
+      </div>
+      <div id="dust-out">${dustCalcHtml()}</div>
+      <div class="note-box"><b>1-Fuse Dust Farming Tech:</b> Normal extraction gives <b>125 Dust</b> (Colored) / <b>750 Dust</b> (Prismatic). Instead, open <b>Enhance &rarr; Jewels</b>, fuse <b>1</b> trash jewel onto a trash equip with jewel slots, and extract that equip for <b>225 Dust</b> (Colored) or <b>850 Dust</b> (Prismatic) (+100 bonus per equip). <i>Fusing 2 colored jewels only gives 350 Dust, so always fuse only 1!</i></div>
     </div>
-    <div id="gexp-out">${gemExpCalcHtml()}</div>
-    ${renderFdBox(solve(state.items))}
-    <div class="chk-grid">
-      <div class="note-box"><b>Prismatic (+4+) Rule:</b> Hologram lines cap at Lv. 3 from Libae gear. A Prismatic Jewel with +1 hologram skill only raises a line past Lv. 3 if it matches a line on your equipped armor. Maxed colored jewels grant up to <b>+300 Main Stat</b> & <b>+100 ATK/MATT</b>.</div>
-      <div class="note-box"><b>Extracting & Safety Tip:</b> Socketing any jewel into a 3L piece protects it from the <b>"All"</b> extraction filter so you don't accidentally melt it. Orbs from the dungeon let you transfer lines onto better-socketed gear later.</div>
+    <div class="panel">
+      ${renderFdBox(solve(state.items))}
+      <div class="chk-grid">
+        <div class="note-box"><b>Prismatic (+4+) Rule:</b> Hologram lines cap at Lv. 3 from Libae gear. A Prismatic Jewel with +1 hologram skill only raises a line past Lv. 3 if it matches a line on your equipped armor.</div>
+        <div class="note-box"><b>Extracting & Safety Tip:</b> Socketing any jewel into a 3L piece protects it from the <b>"All"</b> extraction filter so you don't accidentally melt it. Orbs from the dungeon let you transfer lines onto better-socketed gear later.</div>
+      </div>
     </div>
   </div>`;
 }
@@ -828,11 +891,14 @@ const MAPAE_MODULES = [
   ['Efficiency Module','Green','Damage to Normal Monsters (+5% per Lv, e.g. Lv. 30 = +150%)']
 ];
 const DNG_BUFFS = [
-  ['syram',"Syram's / Merchant Buff",'Quanah Merchant or dungeon drop'],
-  ['fatigue','Fatigue Recovery Potion','Dailies & Proving Grounds mobs'],
-  ['prof2x','2× Potion (Profession)','Requires Professions before leaping'],
-  ['exp_drop','EXP / Drop Consumables','VIP stats, Blue sparkling star, Gold pot'],
-  ['guild_echo',"Guild / Hero's Echo",'Non-conflicting combat buffs']
+  ['echo', "Hero's Echo / Exclusive Spell / Focused Time", 'Class +4% ATT/MATT (40m): Hero\'s Echo (Explorers/Cygnus/Heroes/Resistance/Sengoku/Kinesis/Lynn), Exclusive Spell (Nova/Flora/Anima), Focused Time (Zero)'],
+  ['sayram', "Sayram's Elixir", 'Collector\'s Shop (2M meso): +50 & +10% ATT/MATT, +10% Boss, +20% Crit, +16% Crit Dmg (15m, pre-entry only; overlaps DSE/Bless)'],
+  ['vip_stat', 'VIP Buff (Stats)', 'Event / Proving Grounds VIP Buff (+30 ATT/MATT, +15% Boss/IED/HP, 30m)'],
+  ['mpe_atk', 'MP Extreme Red / Blue + Green', 'Monster Park: Extreme Red (+30 ATT) or Blue (+30 MATT) + Extreme Green (+1 Attack Speed)'],
+  ['mpe_gold', 'MP Extreme Gold (+10% EXP)', 'Monster Park: Extreme Gold Potion (+10% EXP)'],
+  ['sparkling', 'Sparkling Star Potion', '1 Sparkling Star only: Red (+20% Boss), Blue (+20% IED), or Gold (+20 ATT)'],
+  ['exp_drop', "VIP EXP / 2× EXP / Aurelia's", 'VIP Buff (EXP), 2×/3× EXP Coupon, EXP/Wealth Accumulation, Aurelia\'s Elixir (1× fatal blow ignore, pre-entry only)'],
+  ['showa', 'Candied Apple + Cider / Takoyaki', 'Candied Apple (+7 All Stats) + 1 Use-ATT food: Cider (+20 ATT) or Takoyaki (+8/+20 ATT)']
 ];
 function getDng(){
   if(!state.dng) state.dng = {};
@@ -844,49 +910,107 @@ function getDng(){
   if(!d.buffs) d.buffs = {};
   if(!Array.isArray(d.ownedCodes)) d.ownedCodes = [];
   if(!Array.isArray(d.offeredCodes)) d.offeredCodes = [];
+  if(!Array.isArray(d.customCodes)) d.customCodes = [];
   if(typeof d.weeklyPower!=='number') d.weeklyPower = 150;
   if(typeof d.weeklyMax!=='number') d.weeklyMax = 150;
-  if(typeof d.drainPerRoom!=='number') d.drainPerRoom = 5;
+  if(typeof d.drainPerRoom!=='number' || d.drainPerRoom===5) d.drainPerRoom = 1;
   if(typeof d.roomsEntered!=='number') d.roomsEntered = 0;
   return d;
 }
-function recommendCode(offered, owned, fused){
-  const has = id => owned.includes(id);
-  const isFused = fused || (has('broken_heart') && has('creaking_limb') && has('overheated_head'));
-  if(!isFused){
-    if(offered.includes('broken_heart') && !has('broken_heart')) return {pick:'broken_heart', reason:'Priority 1/3 for Overclocked Fusion'};
-    if(offered.includes('creaking_limb') && !has('creaking_limb')) return {pick:'creaking_limb', reason:'Priority 2/3 for Overclocked Fusion'};
-    if(offered.includes('overheated_head')){
-      if(has('broken_heart') && has('creaking_limb')) return {pick:'overheated_head', reason:'3/3 ready — completes Overclocked Fusion!'};
-      const safeAlt = offered.find(id => id!=='overheated_head' && id!=='black_box' && id!=='hard_reset');
-      return safeAlt
-        ? {pick:safeAlt, reason:'Skip Overheated Head (need Heart & Limb first)'}
-        : {pick:null, warn:'Skip Overheated Head — get Broken Heart & Creaking Limb first!'};
-    }
-  }
-  for(const [p,j] of [['type_w_projection','type_w_jailbreak'],['type_m_projection','type_m_jailbreak'],['type_b_projection','type_b_jailbreak'],['type_p_projection','type_p_jailbreak'],['type_t_projection','type_t_jailbreak']]){
-    if(has(p) && offered.includes(j) && !has(j)) return {pick:j, reason:`Synergizes with owned ${p.replace('_projection','').replace('type_','Type-').toUpperCase()} Projection`};
-  }
-  const safeOrder = ['one_coin','overclock_core','quality_assurance','backspace','debuggy','type_w_projection','type_m_projection','type_b_projection','type_p_projection','type_t_projection','type_w_jailbreak','type_m_jailbreak','type_b_jailbreak','type_p_jailbreak','type_t_jailbreak','data_compression','emergency_backup','strangler_fig','wild_pointer','return_protocol'];
-  const ownedProj = owned.find(id => (DUNGEON_CODES.find(c=>c.id===id)||{}).projectGroup);
-  for(const id of safeOrder){
-    if(offered.includes(id) && !has(id)){
-      const meta = DUNGEON_CODES.find(c=>c.id===id)||{};
-      const swapNote = meta.projectGroup && ownedProj ? ` (will swap out ${ownedProj})` : '';
-      return {pick:id, reason:(isFused?'Overclocked Fusion complete — strong pick':'Safe high-value program')+swapNote};
-    }
-  }
-  const risky = new Set(['black_box','hard_reset','entropy']);
-  const fresh = offered.find(id => !has(id) && !risky.has(id)) || offered.find(id => !has(id));
-  if(fresh) return {pick:fresh, reason:fresh==='entropy'?'Caution: +50% FD, but 3 Disorder stacks auto-exit':fresh==='hard_reset'?'Caution: deletes all installed programs (+5% FD each)':fresh==='black_box'?'Caution: removes 2 random owned programs':'Not yet owned'};
-  return {pick:offered[0]||null, reason:'All offered already owned (consider Reroll)'};
+function getAllDungeonCodes(){
+  const d = state.dng;
+  return d && Array.isArray(d.customCodes) && d.customCodes.length ? [...DUNGEON_CODES, ...d.customCodes] : DUNGEON_CODES;
 }
-function parseDungeonOcr(text){
+function scoreCode(id, d){
+  const owned = d.ownedCodes || [], has = x => owned.includes(x);
+  const count = owned.length;
+  const isFused = d.fused || (has('broken_heart') && has('creaking_limb') && has('overheated_head'));
+  const hasFusionPiece = has('broken_heart') || has('creaking_limb');
+  const remRooms = Math.max(1, d.weeklyPower || 20);
+  if(id==='broken_heart' && !isFused && !has('broken_heart')) return {score:85, note:'Fusion 1/3 (+30% potion heal, +10% dmg taken)'};
+  if(id==='creaking_limb' && !isFused && !has('creaking_limb')) return {score:82, note:'Fusion 2/3 (+20 ATT/MATT)'};
+  if(id==='overheated_head'){
+    if(has('broken_heart') && has('creaking_limb')) return {score:120, note:'Completes Overclocked Fusion now!'};
+    return {score:-80, note:'Skip: 20% chance/floor to delete an owned code'};
+  }
+  if(id==='hard_reset'){
+    const fdGain = count * 5;
+    if(count >= 6 && !hasFusionPiece && !isFused) return {score:35 + count * 3, note:`+${fdGain}% FD (wipes ${count} non-fusion codes)`};
+    return {score:-90, note:hasFusionPiece?'Skip: would wipe Overclocked Fusion pieces':`Skip: only +${fdGain}% FD for ${count} codes`};
+  }
+  if(id==='black_box') return (hasFusionPiece || count>=5) ? {score:-60, note:'Skip: removes 2 owned codes at random'} : {score:25, note:'+3 random, -2 owned (net +1 code)'};
+  if(id==='entropy') return remRooms<=6 ? {score:45, note:`+50% FD (~${remRooms} rooms left, low Disorder risk)`} : {score:15, note:'+50% FD, but 30% Disorder/rm (~10 rms avg)'};
+  if(id==='one_coin') return {score:75, note:'+30% FD (caps HP at 50%)'};
+  if(id==='overclock_core') return {score:58, note:'+8/10/12% FD (+5/10/15% dmg taken)'};
+  if(id==='quality_assurance') return {score:52, note:'Up to +15% FD (+3% per 10s unhit)'};
+  if(id==='backspace') return {score:48, note:'10/20/30% CD reset (~15-25% skill DPS)'};
+  const projPairs = [['type_w_projection','type_w_jailbreak'],['type_m_projection','type_m_jailbreak'],['type_b_projection','type_b_jailbreak'],['type_p_projection','type_p_jailbreak'],['type_t_projection','type_t_jailbreak']];
+  for(const [p,j] of projPairs){
+    if(id===j) return has(p) ? {score:65, note:`Synergizes with owned ${p.replace('_projection','').replace('type_','Type-').toUpperCase()} Projection (+10-30% dmg)`} : {score:22, note:'Hologram dmg +10-30% (needs matching Projection)'};
+    if(id===p){
+      const ownedProj = owned.find(x=>(getAllDungeonCodes().find(c=>c.id===x)||{}).projectGroup);
+      if(ownedProj && ownedProj!==id) return {score:has(j)?42:12, note:`Swaps out ${ownedProj}`};
+      return has(j) ? {score:68, note:`Synergizes with owned ${j.replace('_jailbreak','').replace('type_','Type-').toUpperCase()} Jailbreak`} : {score:55, note:'Enables class Hologram skill proc'};
+    }
+  }
+  if(id==='debuggy') return {score:50, note:'1x 100% HP revive'};
+  if(id==='emergency_backup') return {score:40, note:'20/30/70% HP save under 30% HP'};
+  if(id==='data_compression') return {score:38, note:'+10-40% EXP'};
+  if(id==='strangler_fig') return {score:36, note:'5% HP heal on kill (20/40/60%)'};
+  if(id==='wild_pointer') return {score:28, note:'+50 Bytes immediately'};
+  if(id==='return_protocol') return {score:22, note:'Instant safe dungeon exit'};
+  const custom = (d.customCodes||[]).find(c=>c.id===id);
+  if(custom) return {score:custom.estScore||30, note:custom.estNote||'Auto-catalogued program'};
+  return {score:20, note:'Safe pickup'};
+}
+function analyzeOfferedCodes(offered, d){
+  const list = [...new Set(offered||[])];
+  return list.map(id => {
+    const base = scoreCode(id, d);
+    const owned = (d.ownedCodes||[]).includes(id);
+    const adj = owned ? Math.min(base.score, 14) : base.score;
+    return { id, score: adj, note: owned ? `Upgrade/duplicate (${base.note})` : base.note, owned };
+  }).sort((a,b)=>b.score - a.score);
+}
+function recommendCode(offered, owned, fused, d){
+  const ctx = d || { ownedCodes: owned||[], fused: !!fused, weeklyPower: 20, customCodes: [] };
+  const ranked = analyzeOfferedCodes(offered, ctx);
+  if(!ranked.length) return null;
+  const top = ranked[0];
+  if(top.score < 0) return { pick: null, warn: `Skip all (${top.note}) — Reroll if possible`, ranked };
+  return { pick: top.id, reason: top.note, ranked };
+}
+function registerDiscoveredCodes(text, d){
+  const lines = String(text||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
+  const all = getAllDungeonCodes();
+  const ignore = /^(select\s*code|reroll|master\s*level|current\s*level|next\s*level|programs?|owned\s*programs?|slot\s*\d|shop|bytes|confirm|cancel|close|lv\.?\s*\d)/i;
+  for(let i=0;i<lines.length-1;i++){
+    if(/master\s*level|lv\.?\s*\d+\s*\/\s*\d+/i.test(lines[i+1])){
+      const title = lines[i].replace(/[^a-z0-9\s\-']/gi,' ').trim();
+      if(title.length < 4 || title.length > 34 || ignore.test(title)) continue;
+      const already = all.some(c => [c.name,...(c.aliases||[])].some(n => n.toLowerCase() === title.toLowerCase()));
+      if(already) continue;
+      const snippet = lines.slice(i+1, i+4).join(' ');
+      let estScore = 30, estNote = 'New program (auto-catalogued)';
+      if(/final\s*damage|fd\b/i.test(snippet)){ estScore = 54; estNote = 'New FD program (auto-catalogued)'; }
+      else if(/cooldown|cd\b/i.test(snippet)){ estScore = 44; estNote = 'New CD program (auto-catalogued)'; }
+      else if(/\bhp\b|recover|heal/i.test(snippet)){ estScore = 35; estNote = 'New sustain program (auto-catalogued)'; }
+      else if(/\bexp\b/i.test(snippet)){ estScore = 36; estNote = 'New EXP program (auto-catalogued)'; }
+      const id = 'custom_' + title.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+      if(!d.customCodes.some(c=>c.id===id)){
+        d.customCodes.push({ id, name: title, desc: snippet.slice(0, 140), estScore, estNote, autoAdded: true });
+        all.push(d.customCodes[d.customCodes.length - 1]);
+      }
+    }
+  }
+}
+function parseDungeonOcr(text, d){
   const t = String(text||'');
   const isSelect = /select\s*code|reroll/i.test(t);
   const isShop = /\bshop\b[\s\S]{0,60}\bbytes\b|special\s*sale/i.test(t);
   const isInv = /programs?\b[\s\S]{0,40}slot\s*\d+\s*\/\s*30|owned\s*programs?|program\s*inventory/i.test(t);
-  const found = DUNGEON_CODES.filter(c => [c.name,...(c.aliases||[])].some(n => new RegExp(n.replace(/[-\s]+/g,'[-\\s]*'),'i').test(t))).map(c=>c.id);
+  if((isSelect || isInv) && d) registerDiscoveredCodes(t, d);
+  const found = getAllDungeonCodes().filter(c => [c.name,...(c.aliases||[])].some(n => new RegExp(n.replace(/[-\s]+/g,'[-\\s]*'),'i').test(t))).map(c=>c.id);
   const secM = t.match(/sector\s*(\d+)\s*f\s*(\d+)/i);
   const flM = t.match(/\bfloor\s*(\d+)\b/i);
   const roomM = t.match(/\b(survive|survival|defeat\s*all\s*monsters|encounter|mushmom|extracted|gap in the grid|combat|boss)\b/i);
@@ -918,7 +1042,7 @@ function parseDungeonOcr(text){
 const PROJ_SWAP_NOTE = 'Only 1 Type-* Projection can be held at a time; choosing another swaps your current Type-W/M/B/P/T Projection.';
 function dngGlossaryHtml(q){
   const s = (q||'').trim().toLowerCase();
-  const list = DUNGEON_CODES.filter(c => !s || c.name.toLowerCase().includes(s) || c.desc.toLowerCase().includes(s) || (c.syn||[]).some(x=>x.toLowerCase().includes(s)));
+  const list = getAllDungeonCodes().filter(c => !s || c.name.toLowerCase().includes(s) || c.desc.toLowerCase().includes(s) || (c.syn||[]).some(x=>x.toLowerCase().includes(s)));
   return list.length ? list.map(c=>`<div class="note-box" ${c.projectGroup?`title="${PROJ_SWAP_NOTE}"`:''}>
     <div class="row spread"><b>${c.name}</b><div class="row" style="gap:4px">${c.combo?`<span class="pill ok">COMBO${c.partOf?` → ${c.partOf}`:''}</span>`:''}</div></div>
     <div style="margin-top:4px">${c.desc}</div>
@@ -941,7 +1065,13 @@ function renderDungeon(){
       <input type="search" data-dng-q placeholder="Search programs/codes..." value="${d.q.replace(/"/g,'&quot;')}" style="background:var(--surface);border:1px solid var(--line);border-radius:7px;padding:6px 10px;color:var(--fg);font:inherit;min-width:220px"></div>
       <div id="dng-gloss" class="chk-grid">${dngGlossaryHtml(d.q)}</div>`;
   } else if(d.sub==='rooms'){
-    body = `<div class="chk-grid">${rooms.map(([t,desc])=>`<div class="note-box"><b>${t}</b><br>${desc}</div>`).join('')}</div>
+    const missB = DNG_BUFFS.filter(([k])=>!d.buffs[k]);
+    body = `<div class="note-box">
+        <div class="row spread" style="margin-bottom:6px"><b>2026 Pre-Entry Buffs Checklist</b><span class="pill ${missB.length?'short':'ok'}">${missB.length?`${missB.length} missing`:'All Ready'}</span></div>
+        <div class="row" style="gap:5px;flex-wrap:wrap;margin-bottom:6px">${DNG_BUFFS.map(([k,lbl,desc])=>`<button class="tag" data-act="dng-buff" data-k="${k}" title="${desc.replace(/"/g,'&quot;')}" aria-pressed="${!!d.buffs[k]}" style="${!d.buffs[k]?'border-color:var(--warn);color:var(--warn)':''}">${d.buffs[k]?'✓':'!'} ${lbl}</button>`).join('')}</div>
+        <span class="muted" style="font-size:12px"><b>Hero's Echo Variants (+4% ATT/MATT):</b> Explorers/Cygnus/Heroes/Resistance/Sengoku/Kinesis/Lynn = <b>Hero's Echo</b> · Nova/Flora/Anima = <b>Exclusive Spell</b> · Zero = <b>Focused Time</b>.<br><b>Pre-Entry &amp; Stacking Rules:</b> Pop <b>Sayram's Elixir</b> &amp; <b>Aurelia's Elixir</b> before entering. Only <b>1</b> Sparkling Star Potion (Red/Blue/Gold) can be active. <b>Showa / Use Food:</b> <b>Candied Apple</b> (+7 All Stats) stacks cleanly, while <b>Cider</b> (+20 ATT), <b>Takoyaki</b> (+8/+20 ATT), and <b>Warrior/Wizard Elixir</b> share the Use ATT slot (only 1 active — use <b>Cider</b> or <b>Jumbo Takoyaki</b>, not both).</span>
+      </div>
+      <div class="chk-grid">${rooms.map(([t,desc])=>`<div class="note-box"><b>${t}</b><br>${desc}</div>`).join('')}</div>
       <div class="chk-grid">
         <div class="note-box"><b>Sectors, Floors & Portals:</b> Progress through Sectors (e.g. <code>Sector1 F1</code>) across Combat (single sword portal) & Survival (crossed daggers portal) rooms. Talk to the <b>Simulation Console</b> NPC in regular rooms for <b>Select Code</b>. <b>Clear Effect:</b> Cleared sectors grant <b>+50% more EXP</b>.</div>
         <div class="note-box"><b>Active Bar & Detriments:</b> (1) Exclusive Potion · (2) <b>Dummy Mapae</b> (enemy bind) · (3) <b>Garbage Collection</b> (invincible) · (4) <b>Desynced Timer</b> (resets CD of 5th job & below). <b>Familiar drop rate does NOT work inside the dungeon.</b></div>
@@ -1123,6 +1253,7 @@ function render(){
   if(HUD) return renderHud();
   if(OV) return renderOverlay();
   if(DNG) return renderDungeonOverlay();
+  if(JWL) return renderJewelOverlay();
   document.getElementById('nav').innerHTML = [['solver','3L Solver'],['preleap','Pre-Leap'],['jewels','Jewels'],['dungeon','Dungeon'],['progress','Progression']].map(([k,n])=>`<button data-act="tab" data-t="${k}" aria-pressed="${state.tab===k}">${n}</button>`).join('');
   document.getElementById('tab-solver').hidden = state.tab!=='solver';
   document.getElementById('tab-guide').hidden = state.tab==='solver';
@@ -1338,19 +1469,237 @@ function fireworks(){
 const OV = new URLSearchParams(location.search).has('overlay');
 const HUD = new URLSearchParams(location.search).has('hud');
 const DNG = new URLSearchParams(location.search).has('dungeon');
+const JWL = new URLSearchParams(location.search).has('jewel');
 const BRIDGE = window.quanah || null;
 let ovOpen = true;
 if(BRIDGE && BRIDGE.onSync) BRIDGE.onSync(() => { syncFromStorage(); render(); });
-if(BRIDGE && BRIDGE.onOverlayState) BRIDGE.onOverlayState(open => { ovOpen = !!open; if(!OV && !HUD && !DNG) render(); });
-if(BRIDGE && BRIDGE.isOverlayOpen && !OV && !HUD && !DNG) BRIDGE.isOverlayOpen().then(v => { ovOpen = !!v; render(); });
+if(BRIDGE && BRIDGE.onOverlayState) BRIDGE.onOverlayState(open => { ovOpen = !!open; if(!OV && !HUD && !DNG && !JWL) render(); });
+if(BRIDGE && BRIDGE.isOverlayOpen && !OV && !HUD && !DNG && !JWL) BRIDGE.isOverlayOpen().then(v => { ovOpen = !!v; render(); });
+function parseJewelOcr(text){
+  const t = String(text || '').replace(/([0-9])[Oo]([0-9])/g,'$10$2');
+  const out = { dustOwned: null, slotTotal: null, curLv: null, tgtLv: null, matUsed: null, matReq: null, matOwned: null, jewelColor: '', jewelLv: null, tooltipJewel: null };
+  const invM = t.match(/INV_DUST:([^\n]+)/);
+  if(invM){
+    const nums = [...invM[1].matchAll(/\b(\d{1,5})\b/g)].map(m=>+m[1]).filter(n=>n>=0&&n<=DUST_CAP);
+    if(nums.length) out.dustOwned = Math.max(...nums);
+  }
+  const slotM = t.match(/\bSLOT\s*(\d{1,3})\s*\/\s*256\b/i);
+  if(slotM) out.slotTotal = Math.min(256, +slotM[1]);
+  const dustM = t.match(/DUST\s*OWNED[^0-9]*(\d[\d,]*)\s*[\/\\|1Il]?\s*3[0O]{4}/i) || t.match(/(\d[\d,]*)\s*[\/\\|]\s*3[0O]{4}/i);
+  if(out.dustOwned===null && dustM) out.dustOwned = Math.min(DUST_CAP, +dustM[1].replace(/,/g,''));
+  const lvM = t.match(/Lv\.?\s*(\d+)\s*>{2,}\s*Lv\.?\s*(\d+)/i);
+  if(lvM){ out.curLv = Math.max(1, Math.min(4, +lvM[1])); out.tgtLv = +lvM[2]; }
+  const matM = t.match(/Materials\s*Used[^0-9]*(\d+)\s*\/\s*(\d+)/i) || t.match(/\b(\d+)\s*\/\s*(5|9|13|15|18|20)\b/);
+  if(matM){ out.matUsed = +matM[1]; out.matReq = +matM[2]; }
+  const ownM = t.match(/Materials\s*Owned[^0-9]*(\d+)/i);
+  if(ownM) out.matOwned = +ownM[1];
+  const ttRaw = t.includes('TT_JWL:') ? t.slice(t.indexOf('TT_JWL:') + 7) : t;
+  const ttSrc = /REGISTERED\s*JEWELS|1-FUSE\s*TECH|PRISMATIC\s*\(3K\)/i.test(ttRaw) ? '' : ttRaw;
+  const normLv = v => /[lI]/i.test(v) ? 1 : +v;
+  const jM = ttSrc.match(/\b(Red|Blue|Green|Yellow|Gray|Prismatic)\b(?:\s*[\r\n]+\s*(?:Lv|I-?v)[.\s_]*([1-5lI])|\s+(?:Lv|I-?v)[.\s_]*([1-5lI]))?/i);
+  if(jM){
+    out.jewelColor = jM[1];
+    out.jewelLv = (jM[2] || jM[3]) ? normLv(jM[2] || jM[3]) : null;
+  }
+  // Parse individual hovered jewel tooltip stats (any 2 of STR/DEX/LUK/INT/Max HP/Max MP/ATT/MATT)
+  if(jM && !lvM){
+    const sub = ttSrc.slice(jM.index, jM.index + 240).replace(/\bI-?IP\b/gi,'HP').replace(/\bI-?MP\b/gi,'MP');
+    const stats = [];
+    let infLv = out.jewelLv;
+    for(const m of sub.matchAll(/\b(STR|DEX|LUK|INT|(?:Max\s*)?HP|(?:Max\s*)?MP|Magic\s*Attack|Attack\s*Power)[^\d+\r\n]{0,6}\+\s*(\d[\d \tOo]{0,6})/gi)){
+      const lbl = m[1].replace(/\s+/g,' ').replace(/Attack Power/i,'ATT').replace(/Magic Attack/i,'MATT').replace(/^(HP|MP)$/i,'Max $1');
+      let val = +m[2].replace(/[Oo]/g,'0').replace(/\s+/g,'');
+      if(/^(ATT|MATT)$/i.test(lbl) && val>=1 && val<=4) val *= 10;
+      else if(/^Max (HP|MP)$/i.test(lbl) && val < 1000) val = (infLv || 1) * 1000;
+      stats.push(`${lbl} +${val}`);
+      if(!infLv){
+        if(/^(STR|DEX|LUK|INT)$/i.test(lbl)) infLv = ({50:1,100:2,150:3,200:4,300:5})[val] || 1;
+        else if(/^(ATT|MATT)$/i.test(lbl)) infLv = ({10:1,20:2,30:3,40:4,100:5})[val] || 1;
+      }
+      if(stats.length>=2) break;
+    }
+    if(stats.length>=2) out.tooltipJewel = { color: jM[1], lv: infLv || 1, stats };
+  }
+  return out;
+}
+if(JWL && BRIDGE && BRIDGE.onJewelScan) BRIDGE.onJewelScan(msg => {
+  if(msg.status!=='done') return;
+  const p = parseJewelOcr(msg.text), j = getJwl(), d = getDustState();
+  let hit = false;
+  if(p.dustOwned!==null){ j.dustOwned = p.dustOwned; d.cur = p.dustOwned; hit = true; }
+  if(p.slotTotal!==null){ j.slotTotal = p.slotTotal; hit = true; }
+  if(p.curLv!==null){ j.curLv = p.curLv; j.tgtLv = p.tgtLv || (p.curLv+1); j.matReq = jwlStepReq(j, j.curLv); if((j.goalLv||3)<=j.curLv) j.goalLv = Math.min(5, j.curLv+1); hit = true; }
+  if(p.matUsed!==null){ j.matUsed = p.matUsed; if(p.matReq){ j.matReq = p.matReq; if(p.matReq===5) j.curLv=1; else if(p.matReq===9) j.curLv=2; j.stepReqs[j.curLv] = p.matReq; j.tgtLv = j.curLv + 1; if((j.goalLv||3)<=j.curLv) j.goalLv = Math.min(5, j.curLv+1); } hit = true; }
+  if(p.matOwned!==null){ j.matOwned = p.matOwned; hit = true; }
+  if(p.jewelColor){ j.jewelColor = p.jewelColor; j.jewelLv = p.jewelLv || 1; hit = true; }
+  if(p.tooltipJewel){
+    j.lastTooltip = p.tooltipJewel;
+    const sig = `${p.tooltipJewel.color}|Lv.${p.tooltipJewel.lv}|${p.tooltipJewel.stats.join(',')}`;
+    if(!Array.isArray(j.scannedJewels)) j.scannedJewels = [];
+    if(sig !== j.lastTooltipSig || (msg.trigger==='manual' && msg.at - (j.lastTooltipAt||0) > 1500)){
+      const ex = j.scannedJewels.find(x=>x.key===sig);
+      if(ex) ex.count++; else j.scannedJewels.push({ key:sig, ...p.tooltipJewel, count:1 });
+      j.lastTooltipSig = sig; j.lastTooltipAt = msg.at;
+    }
+    hit = true;
+  }
+  if(msg.jewelInv && msg.jewelInv.total > 0){
+    const slotCap = j.slotTotal || msg.jewelInv.total;
+    if(slotCap <= 64 || !j.inv || !j.inv.total){
+      j.inv = { ...msg.jewelInv };
+      j.invSeenRows = Array.isArray(msg.jewelInv.rows) ? msg.jewelInv.rows.slice() : [];
+    } else {
+      // Multi-page >64 slots: accumulate unseen scrolled rows up to slotCap (max 256)
+      if(!Array.isArray(j.invSeenRows)) j.invSeenRows = [];
+      const charMap = { R:'red', B:'blue', G:'green', P:'purple', X:'gray' };
+      for(const row of (msg.jewelInv.rows||[])){
+        if(j.inv.total >= Math.min(256, slotCap)) break;
+        if(j.invSeenRows.includes(row)) continue;
+        j.invSeenRows.push(row);
+        for(const ch of row){
+          if(ch==='.' || j.inv.total >= Math.min(256, slotCap)) continue;
+          j.inv.total++;
+          if(ch==='P') j.inv.prismatic++;
+          else if(charMap[ch]) j.inv[charMap[ch]] = (j.inv[charMap[ch]]||0) + 1;
+        }
+      }
+    }
+    const mainCols = new Set(JEWELS.filter(x=>x.main===state.mainStat).map(x=>x.color.toLowerCase()));
+    const trashCol = ['red','blue','green','purple','gray'].reduce((s,c)=>s+(mainCols.has(c)?0:(j.inv[c]||0)),0);
+    d.spareColor = trashCol;
+    d.sparePris = j.inv.prismatic || 0;
+    hit = true;
+  }
+  j.scanNote = hit ? '' : (msg.trigger==='manual' ? 'No Enhance Jewel or Inventory > Jewels window found.' : j.scanNote || '');
+  j.lastScanAt = msg.at;
+  save(); renderJewelOverlay();
+});
+function jewelOvDustSummaryHtml(){
+  const d = getDustState();
+  const colorPer = d.fuseTech ? 225 : 125, prisPer = d.fuseTech ? 850 : 750;
+  const ownedDust = Math.max(0, +d.cur||0);
+  const extractDust = (+d.spareColor||0)*colorPer + (+d.sparePris||0)*prisPer;
+  const totalDust = ownedDust + extractDust;
+  const effOwned = Math.min(DUST_CAP, ownedDust), effTotal = Math.min(DUST_CAP, totalDust);
+  return `<div class="row spread"><span class="label">Owned Dust</span><b class="${ownedDust>DUST_CAP?'warn':''}">${ownedDust.toLocaleString()} / 30,000</b></div>
+    <div class="row spread" style="font-size:11px"><span class="muted">Craftable now: <b>${Math.floor(effOwned/3000)}</b> Pris (3k) · <b>${Math.floor(effOwned/500)}</b> Col (500)</span></div>
+    <div class="row spread" style="margin-top:4px"><span class="label">Projected Dust (+Extracts)</span><b class="${totalDust>DUST_CAP?'warn':''}">${totalDust.toLocaleString()} / 30,000</b></div>
+    <div class="row spread" style="font-size:11px"><span class="muted">+${extractDust.toLocaleString()} extracts · Craftable: <b>${Math.floor(effTotal/3000)}</b> Pris · <b>${Math.floor(effTotal/500)}</b> Col</span></div>`;
+}
+const JWL_REQ_DEFAULT = { 1: 5, 2: 9, 3: 0, 4: 0 };
+const JWL_STAT_GAIN = {
+  1: '+50 → +100 Main/Sec (Gray +10 → +20 ATT)',
+  2: '+100 → +150 Main/Sec (Gray +20 → +30 ATT)',
+  3: '+150 → +200 Main/Sec (Gray +30 → +40 ATT)',
+  4: '+200 → +300 Main/Sec (Gray +40 → +100 ATT)'
+};
+function jwlReqFor(j){
+  return jwlStepReq(j, j.curLv);
+}
+function jewelOvLvSummaryHtml(){
+  const d = getDustState(), j = getJwl();
+  const colorPer = d.fuseTech ? 225 : 125, prisPer = d.fuseTech ? 850 : 750;
+  const effDust = Math.min(DUST_CAP, Math.max(0, (+d.cur||0) + (+d.spareColor||0)*colorPer + (+d.sparePris||0)*prisPer));
+  const goalLv = Math.max(j.curLv + 1, Math.min(5, +j.goalLv || 3));
+  const req = jwlReqFor(j);
+  const used = req ? Math.max(0, Math.min(req, +j.matUsed||0)) : Math.max(0, +j.matUsed||0);
+  const rem = req ? Math.max(0, req - used) : 0;
+  const unitCost = j.fodderType==='pris' ? 3000 : 500;
+  const fromOne = jwlCumulative(1, goalLv, j);
+  const fromCur = jwlCumulative(j.curLv, goalLv, j);
+  const remToGoal = Math.max(0, fromCur.sum - used);
+  const remCost = remToGoal * unitCost;
+  const dustShort = Math.max(0, remCost - effDust);
+  const statNote = JWL_STAT_GAIN[j.curLv] || JWL_STAT_GAIN[1];
+  const stepLine = req
+    ? `<div class="row spread" style="font-size:11.5px"><span>Step ${j.curLv}→${j.curLv+1}: <b>${used}/${req}</b></span><span>Need: <b>${rem}</b> (${(rem*unitCost).toLocaleString()} Dust)</span></div>`
+    : `<div class="ov-note" style="font-size:11px">Enter <b>Req</b> or scan Enhance UI for Lv.${j.curLv}→${j.curLv+1} cost.</div>`;
+  const totalLine = `<div class="row spread" style="font-size:11.5px"><span>Total 1→${goalLv}: <b>${fromOne.sum}${fromOne.unknown?'+?':''}</b> (${(fromOne.sum*unitCost).toLocaleString()} Dust)</span><span>Left: <b>${remToGoal}${fromCur.unknown?'+?':''}</b></span></div>`;
+  const statusLine = fromCur.unknown
+    ? `<div class="ov-note" style="font-size:11px">${statNote}</div>`
+    : `<div class="${dustShort===0?'verdict yes':'ov-note warn'}" style="font-size:11px">${dustShort===0?`Covered by Dust! ${statNote}`:`Short ${dustShort.toLocaleString()} Dust (~${Math.ceil(dustShort/colorPer)} trash Col or ${Math.ceil(dustShort/prisPer)} trash Pris)`}</div>`;
+  return stepLine + totalLine + statusLine;
+}
+const ovNavHtml = active => BRIDGE ? `<div class="seg" style="width:100%;justify-content:center">${[['open-ov','3l','3L Solver'],['dng-ov-open','dng','Dungeon'],['jwl-ov-open','jwl','Jewels']].map(([act,k,lbl])=>`<button style="flex:1" data-act="${act}" aria-pressed="${active===k}">${lbl}</button>`).join('')}</div>` : '';
+function jewelScannedListHtml(j, rich = false){
+  const q = (j.q || '').trim().toLowerCase();
+  const fCol = (j.fCol || 'all').toLowerCase(), fStat = (j.fStat || 'all').toLowerCase();
+  const list = (j.scannedJewels || []).slice().reverse().filter(x => {
+    if(fCol !== 'all' && x.color.toLowerCase() !== fCol) return false;
+    if(fStat !== 'all' && !x.stats.join(' ').toLowerCase().includes(fStat)) return false;
+    return !q || `${x.color} Lv.${x.lv} ${x.stats.join(' ')}`.toLowerCase().includes(q);
+  });
+  if(!list.length){
+    return `<span class="muted" style="font-size:${rich?'12.5px':'11px'}">${(j.scannedJewels||[]).length ? 'No matching jewels for this filter.' : 'No jewel tooltips recorded yet. Hover over jewels in-game with the Jewel Helper Overlay open to log their stats & duplicates.'}</span>`;
+  }
+  const hexOf = c => (JEWELS.find(w=>w.color.toLowerCase()===c.toLowerCase())||{}).hex || '#f0a92b';
+  return list.map(x=> rich
+    ? `<div class="note-box" style="padding:7px 10px"><div class="row spread"><span><span class="jdot" style="background:${hexOf(x.color)}"></span><b>${x.color} Lv.${x.lv}</b> · ${x.stats.join(', ')}</span><span class="pill ok">&times;${x.count}</span></div></div>`
+    : `<div class="row spread"><span><b>${x.color} Lv.${x.lv}</b> · ${x.stats.join(', ')}</span><span class="pill ok" style="padding:1px 6px;font-size:10.5px">&times;${x.count}</span></div>`).join('');
+}
+function renderJewelOverlay(){
+  const d = getDustState(), j = getJwl();
+  const prevList = document.getElementById('jwl-tt-list');
+  const prevScroll = prevList ? prevList.scrollTop : 0;
+  const activeEl = document.activeElement;
+  if(activeEl && activeEl.tagName==='INPUT' && activeEl.closest('#ov-root')){
+    const jdo = document.getElementById('jwl-ov-dust-out'); if(jdo) jdo.innerHTML = jewelOvDustSummaryHtml();
+    const jlo = document.getElementById('jwl-ov-lv-out'); if(jlo) jlo.innerHTML = jewelOvLvSummaryHtml();
+    if(prevList){ prevList.innerHTML = jewelScannedListHtml(j); prevList.scrollTop = prevScroll; }
+    return;
+  }
+  const colorPer = d.fuseTech ? 225 : 125, prisPer = d.fuseTech ? 850 : 750;
+  const req = jwlReqFor(j);
+  const used = req ? Math.max(0, Math.min(req, +j.matUsed||0)) : Math.max(0, +j.matUsed||0);
+  document.getElementById('ov-root').innerHTML = `<div class="ov">
+    <div class="ov-head"><h2>Jewel Helper</h2>
+      <div class="row">${BRIDGE?`<button class="ghost" data-act="ov-auto" aria-pressed="${state.auto}">${state.auto?'Auto':'Manual'}</button><button class="ghost" data-act="jwl-ov-scan">Scan</button><button class="ghost" data-act="jwl-ov-close">&times;</button>`:''}</div></div>
+    ${ovNavHtml('jwl')}
+    ${j.scanNote?`<div class="ov-note warn" style="font-size:11.5px">${j.scanNote}</div>`:''}
+    ${j.inv&&j.inv.total?`<div class="ov-card"><div class="row spread"><span class="label">Inventory Jewels (${j.inv.total}${j.slotTotal?`/${j.slotTotal}`:''} · Max 256)</span><div class="row" style="gap:4px"><span class="muted" style="font-size:11px">Main: ${state.mainStat}</span>${j.slotTotal>64?`<button class="ghost" style="padding:1px 6px;font-size:10.5px" data-act="jwl-inv-reset">Reset</button>`:''}</div></div><div class="row" style="gap:4px;flex-wrap:wrap;font-size:11px">${[['red','Red','#e0484d'],['blue','Blue','#2f9bd6'],['green','Green','#1fa67a'],['purple','Purple','#9b6ef3'],['gray','Gray','#8c99ad'],['prismatic','Pris','#f0a92b']].filter(([k])=>k==='prismatic'||j.inv[k]>0).map(([k,lbl,hex])=>`<span class="pill" style="border-color:${hex};padding:2px 6px">${lbl}: <b>${j.inv[k]||0}</b>${j.inv[k]>=9?' (Lv.3!)':j.inv[k]>=5?' (Lv.2!)':''}</span>`).join('')}</div></div>`:''}
+    <div class="ov-card">
+      <div id="jwl-ov-dust-out">${jewelOvDustSummaryHtml()}</div>
+      <div class="row spread" style="gap:6px">
+        <span class="muted" style="font-size:11px">Dust:</span>
+        <input type="number" min="0" max="30000" step="25" data-dust="cur" value="${+d.cur||0}" style="width:74px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit">
+        <span class="muted" style="font-size:11px">Col:</span>
+        <input type="number" min="0" step="1" data-dust="spareColor" value="${+d.spareColor||0}" style="width:46px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit">
+        <span class="muted" style="font-size:11px">Pris:</span>
+        <input type="number" min="0" step="1" data-dust="sparePris" value="${+d.sparePris||0}" style="width:46px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit">
+      </div>
+      <div class="row spread"><button class="tag" data-act="jwl-fuse-tech" aria-pressed="${!!d.fuseTech}">1-Fuse Tech: ${d.fuseTech?'ON':'OFF'}</button><span class="muted" style="font-size:11px">Col ${colorPer} · Pris ${prisPer} Dust</span></div>
+    </div>
+    <div class="ov-card">
+      <div class="row spread"><span class="label">Enhance Jewel</span>
+        <div class="seg"><button data-act="jwl-lv" data-lv="1" aria-pressed="${j.curLv===1}">Lv.1</button><button data-act="jwl-lv" data-lv="2" aria-pressed="${j.curLv===2}">Lv.2</button><button data-act="jwl-lv" data-lv="3" aria-pressed="${j.curLv===3}">Lv.3</button><button data-act="jwl-lv" data-lv="4" aria-pressed="${j.curLv===4}">Lv.4</button></div>
+      </div>
+      <div class="row spread" style="gap:6px">
+        <span class="muted" style="font-size:11px">Goal:</span>
+        <div class="seg">${[2,3,4,5].map(gl=>`<button data-act="jwl-goal" data-gl="${gl}" aria-pressed="${(+j.goalLv||3)===gl}" ${gl<=j.curLv?'disabled':''}>Lv.${gl}</button>`).join('')}</div>
+        <div class="seg"><button data-act="jwl-type" data-t="color" aria-pressed="${j.fodderType==='color'}">Col 500</button><button data-act="jwl-type" data-t="pris" aria-pressed="${j.fodderType==='pris'}">Pris 3k</button></div>
+      </div>
+      <div class="row spread" style="gap:6px">
+        <span class="muted" style="font-size:11px">Used:</span>
+        <input type="number" min="0" max="${req||99}" step="1" data-jwl-num="matUsed" value="${used}" style="width:48px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit">
+        ${j.curLv>=3?`<span class="muted" style="font-size:11px">Req (${j.curLv}→${j.curLv+1}):</span><input type="number" min="0" max="99" step="1" data-jwl-num="matReq" value="${req||''}" placeholder="?" style="width:44px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit">`:''}
+      </div>
+      <div id="jwl-ov-lv-out">${jewelOvLvSummaryHtml()}</div>
+    </div>
+    <div class="ov-card"><div class="row spread"><span class="label">Registered Jewels (${(j.scannedJewels||[]).reduce((s,x)=>s+x.count,0)})</span>${(j.scannedJewels||[]).length?`<button class="ghost" style="padding:1px 6px;font-size:10.5px" data-act="jwl-tt-clear">Clear</button>`:''}</div><div class="seg" style="flex-wrap:wrap">${[['all','All'],['Red','Red'],['Blue','Blue'],['Green','Green'],['Purple','Purp'],['Gray','Gray'],['Prismatic','Pris']].map(([c,lbl])=>`<button data-act="jwl-fcol" data-c="${c}" aria-pressed="${(j.fCol||'all')===c}">${lbl}</button>`).join('')}</div><input type="search" data-jwl-q placeholder="Search color or stat (e.g. Red, STR, ATT)..." value="${(j.q||'').replace(/"/g,'&quot;')}" style="width:100%;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 7px;color:var(--fg);font:inherit;font-size:11px"><div id="jwl-tt-list" style="display:flex;flex-direction:column;gap:3px;font-size:11px;max-height:110px;overflow-y:auto;padding-right:2px">${jewelScannedListHtml(j)}</div></div>
+    <div class="ov-note" style="font-size:11px"><b>1-Fuse Tech:</b> Fuse 1 trash jewel onto a trash equip with slots & extract it (<b>225</b> Col / <b>850</b> Pris). Never fuse 2 colored (only 350).</div>
+  </div>`;
+  const nextList = document.getElementById('jwl-tt-list');
+  if(nextList && prevScroll) nextList.scrollTop = prevScroll;
+  if(BRIDGE && BRIDGE.resizeJewelOverlay) requestAnimationFrame(()=>{ const el=document.querySelector('.ov'); if(el) BRIDGE.resizeJewelOverlay(el.scrollHeight + 12); });
+}
 if(DNG && BRIDGE && BRIDGE.onDungeonScan) BRIDGE.onDungeonScan(msg => {
   if(msg.status!=='done') return;
   const d = getDng();
   if(msg.trigger==='room'){
     d.roomsEntered = (d.roomsEntered||0) + 1;
-    d.weeklyPower = Math.max(0, (d.weeklyPower||0) - (d.drainPerRoom||5));
+    d.weeklyPower = Math.max(0, (d.weeklyPower||0) - (d.drainPerRoom||1));
   }
-  const parsed = parseDungeonOcr(msg.text);
+  const parsed = parseDungeonOcr(msg.text, d);
   if(parsed.sector) d.sector = parsed.sector;
   if(parsed.roomType) d.roomType = parsed.roomType;
   if(parsed.weeklyPower!==null){ d.weeklyPower = parsed.weeklyPower; d.weeklyMax = parsed.weeklyMax || 150; }
@@ -1363,41 +1712,60 @@ if(DNG && BRIDGE && BRIDGE.onDungeonScan) BRIDGE.onDungeonScan(msg => {
   } else if(parsed.isSelect && parsed.found.length){
     d.offeredCodes = parsed.found;
   }
+  if(Array.isArray(msg.detectedBuffs)){
+    d.detectedBuffs = msg.detectedBuffs;
+    delete d.buffs.mvp_guild;
+    delete d.buffs.fatigue;
+    for(const k of ['echo','sayram','vip_stat','mpe_atk','mpe_gold','sparkling','exp_drop','showa']){
+      d.buffs[k] = msg.detectedBuffs.includes(k);
+    }
+  }
   d.lastScanAt = msg.at; d.lastTrigger = msg.trigger;
   save(); renderDungeonOverlay();
 });
 function renderDungeonOverlay(){
   const d = getDng();
   const missBuffs = DNG_BUFFS.filter(([k])=>!d.buffs[k]);
-  const rec = d.offeredCodes.length ? recommendCode(d.offeredCodes, d.ownedCodes, d.fused) : null;
-  const codeName = id => (DUNGEON_CODES.find(c=>c.id===id)||{}).name || id;
+  const rec = d.offeredCodes.length ? recommendCode(d.offeredCodes, d.ownedCodes, d.fused, d) : null;
+  const allCodes = getAllDungeonCodes();
+  const codeName = id => (allCodes.find(c=>c.id===id)||{}).name || id;
   const wmax = Math.max(1, +d.weeklyMax||150);
   const wp = Math.max(0, Math.min(wmax, d.weeklyPower!==undefined?+d.weeklyPower:wmax));
   document.getElementById('ov-root').innerHTML = `<div class="ov">
     <div class="ov-head"><h2>Dungeon Helper <span class="muted" style="font-weight:500">${d.sector?`${d.sector}${d.roomType?' · '+d.roomType:''}`:`Rm ${d.roomsEntered||0}`}</span></h2>
-      <div class="row">${BRIDGE?`<button class="ghost" data-act="dng-ov-scan">Scan</button><button class="ghost" data-act="dng-ov-close">&times;</button>`:''}</div></div>
+      <div class="row">${BRIDGE?`<button class="ghost" data-act="ov-auto" aria-pressed="${state.auto}">${state.auto?'Auto':'Manual'}</button><button class="ghost" data-act="dng-ov-scan">Scan</button><button class="ghost" data-act="dng-ov-close">&times;</button>`:''}</div></div>
+    ${ovNavHtml('dng')}
     ${d.roomBuffs&&d.roomBuffs.length?`<div class="verdict yes" style="font-size:12px">Room Buff: ${d.roomBuffs.join(', ')}</div>`:''}
     ${d.detriments&&d.detriments.length?`<div class="ov-note warn"><b>Active Detriment:</b> ${d.detriments.join(', ')}</div>`:''}
     ${d.encounter?`<div class="ov-note"><b>Encounter:</b> ${d.encounter}</div>`:''}
     <div class="ov-card">
-      <div class="row spread"><span class="label">Pre-Entry Buffs</span><span class="pill ${missBuffs.length?'short':'ok'}">${missBuffs.length?`${missBuffs.length} missing`:'All Ready'}</span></div>
-      <div class="row" style="gap:4px">${DNG_BUFFS.map(([k,lbl])=>`<button class="tag" data-act="dng-buff" data-k="${k}" aria-pressed="${!!d.buffs[k]}" style="${!d.buffs[k]?'border-color:var(--warn);color:var(--warn)':''}">${d.buffs[k]?'✓':'!'} ${lbl}</button>`).join('')}</div>
+      <div class="row spread"><span class="label">Pre-Entry Buffs (2026)</span><span class="row" style="gap:4px">${d.detectedBuffs&&d.detectedBuffs.length?`<span class="pill ok" title="Auto-detected from top-right buff bar">${d.detectedBuffs.length} bar</span>`:''}<span class="pill ${missBuffs.length?'short':'ok'}">${missBuffs.length?`${missBuffs.length} missing`:'All Ready'}</span></span></div>
+      <div class="row" style="gap:4px">${DNG_BUFFS.map(([k,lbl,desc])=>`<button class="tag" data-act="dng-buff" data-k="${k}" title="${desc.replace(/"/g,'&quot;')}" aria-pressed="${!!d.buffs[k]}" style="${!d.buffs[k]?'border-color:var(--warn);color:var(--warn)':''}">${d.buffs[k]?'✓':'!'} ${lbl}</button>`).join('')}</div>
     </div>
     <div class="ov-card">
       <div class="row spread"><span class="label">Projected Weekly Power</span><b>${wp} / ${wmax}</b></div>
       <div class="row spread" style="gap:6px">
         <input type="number" min="0" max="${wmax}" data-dng-num="weeklyPower" value="${wp}" style="width:68px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit">
         <span class="muted" style="font-size:11.5px">Drain/rm:</span>
-        <input type="number" min="0" max="50" data-dng-num="drainPerRoom" value="${+d.drainPerRoom||5}" style="width:52px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit">
+        <input type="number" min="0" max="50" data-dng-num="drainPerRoom" value="${+d.drainPerRoom||1}" style="width:52px;background:var(--surface);border:1px solid var(--line);border-radius:5px;padding:3px 6px;color:var(--fg);font:inherit">
         <button class="ghost" data-act="dng-room">-1 Rm</button>
         <button class="ghost" data-act="dng-wp-reset">Reset</button>
       </div>
     </div>
     <div class="ov-card">
-      <div class="row spread"><span class="label">Select Code & Overclocked Priority</span>${d.fused?`<span class="pill ok">Fused</span>`:`<span class="muted" style="font-size:11px">Heart → Limb → Head</span>`}</div>
-      ${rec ? (rec.warn ? `<div class="verdict no">${rec.warn}</div>` : `<div class="verdict yes">Pick: ${codeName(rec.pick)}</div><div class="muted" style="font-size:11.5px">${rec.reason}</div>`) : `<div class="ov-note">Open <b>Select Code</b> or <b>Owned Programs</b> in-game (auto-scans on room change / Reroll).</div>`}
-      ${d.offeredCodes.length?`<div class="row" style="gap:4px"><span class="muted" style="font-size:11px">Offered:</span>${d.offeredCodes.map(id=>`<button class="tag" data-act="dng-pick" data-id="${id}" aria-pressed="${rec&&rec.pick===id}">${codeName(id)}</button>`).join('')}</div>`:''}
-      <div class="row" style="gap:4px"><span class="muted" style="font-size:11px">Owned:</span>${['broken_heart','creaking_limb','overheated_head','overclocked'].map(id=>`<button class="tag" data-act="dng-own" data-id="${id}" aria-pressed="${d.ownedCodes.includes(id)}">${codeName(id)}</button>`).join('')}</div>
+      <div class="row spread"><span class="label">Select Code Analysis (${d.ownedCodes.length} owned)</span>${d.fused?`<span class="pill ok">Fusion Complete</span>`:`<span class="muted" style="font-size:11px">Fusion: ${['broken_heart','creaking_limb','overheated_head'].filter(x=>d.ownedCodes.includes(x)).length}/3</span>`}</div>
+      ${rec ? `
+        <div class="${rec.warn?'verdict no':'verdict yes'}" style="font-size:12px">${rec.warn ? rec.warn : `★ BEST PICK: ${codeName(rec.pick)}`}</div>
+        <div style="display:flex;flex-direction:column;gap:5px">
+          ${(rec.ranked||[]).map((r,idx)=>`<div style="padding:6px 8px;border-radius:7px;border:1px solid ${idx===0&&r.score>=0?'var(--ok)':'var(--line)'};background:var(--surface);display:flex;flex-direction:column;gap:3px">
+            <div class="row spread">
+              <span style="font-size:12px"><b>#${idx+1} ${codeName(r.id)}</b> <span class="pill ${r.score>=50?'ok':r.score<0?'short':''}" style="padding:1px 6px;font-size:10.5px">${r.score>=0?'+':''}${r.score}</span></span>
+              <button class="tag" data-act="dng-pick" data-id="${r.id}" aria-pressed="${rec.pick===r.id}" style="padding:2px 8px;font-size:11px">Pick</button>
+            </div>
+            <span class="muted" style="font-size:11.5px;line-height:1.3">${r.note}</span>
+          </div>`).join('')}
+        </div>` : `<div class="ov-note">Open <b>Select Code</b> or <b>Owned Programs</b> in-game and click <b>Scan</b> (auto-scans on room change).</div>`}
+      ${d.ownedCodes.length?`<div class="muted" style="font-size:11px;line-height:1.35"><b>Owned:</b> ${d.ownedCodes.map(codeName).join(' · ')}</div>`:''}
     </div>
   </div>`;
   if(BRIDGE) requestAnimationFrame(()=>{ const el=document.querySelector('.ov'); if(el) BRIDGE.resizeDungeonOverlay(el.scrollHeight + 12); });
@@ -1660,6 +2028,7 @@ function renderOverlay(){
   document.getElementById('ov-root').innerHTML = `<div class="ov ${showWinFx?'win':''}">
     <div class="ov-head"><h2>${sockMode?`Sockets <span class="muted" style="font-weight:500">${sockScore}/18</span>`:`3L Solver <span class="muted" style="font-weight:500">${res.best}/${TOTAL}${bothMode?` · ${ss.score}/18`:''}</span>`}</h2>
       <div class="row">${BRIDGE?`<button class="ghost" id="ov-auto" data-act="ov-auto" aria-pressed="${state.auto}">${state.auto?'Auto':'Manual'}</button><button class="ghost" id="ov-scan" data-act="ov-scan">Scan</button>`:''}<button class="ghost" id="ov-close" data-act="ov-close" aria-label="Hide overlay (F9)">&times;</button></div></div>
+    ${ovNavHtml('3l')}
     <div class="row spread"><div class="row" style="gap:5px">${BRIDGE?`<button class="ghost" id="ov-main" data-act="ov-main">Full UI</button><button class="ghost" id="ov-gear" data-act="ov-gear" aria-pressed="${!!state.gearOpen}">Gear (${totalGear})</button>`:''}</div>
       <div class="seg"><button data-act="focus" data-f="lines" aria-pressed="${state.focus==='lines'}">3L Lines</button><button data-act="focus" data-f="sockets" aria-pressed="${state.focus==='sockets'}">Sockets</button><button data-act="focus" data-f="both" aria-pressed="${state.focus==='both'}">3L+Sock</button></div></div>
     ${state.focus!=='lines'?(()=>{ const sg=state.sockGoal||'pris2'; return `<div class="row spread"><span class="muted" style="font-size:11.5px">Socket Goal</span><div class="seg"><button data-act="sockgoal" data-g="pris2" aria-pressed="${sg==='pris2'}">Pris+2</button><button data-act="sockgoal" data-g="3class" aria-pressed="${sg==='3class'}">3× Class</button></div></div>`; })():''}
@@ -1692,6 +2061,7 @@ function syncFromStorage(){
     if(raw && raw.mapae && typeof raw.mapae==='object') state.mapae = raw.mapae;
     if(raw && raw.gemExp && typeof raw.gemExp==='object') state.gemExp = raw.gemExp;
     if(raw && raw.dng && typeof raw.dng==='object') state.dng = raw.dng;
+    if(raw && raw.jwl && typeof raw.jwl==='object') state.jwl = raw.jwl;
     if(raw && typeof raw.inspLv==='number') state.inspLv = raw.inspLv;
     if(raw && Array.isArray(raw.scanLog)) state.scanLog = raw.scanLog;
     if(raw && Array.isArray(raw.sockScanLog)) state.sockScanLog = raw.sockScanLog;
@@ -1744,7 +2114,7 @@ document.addEventListener('click', e=>{
       state.sockItems[sc.slot].push(mk(sc.sockets.slice())); state.scan = null;
     }
   }
-  else if(act==='tab'){ state.tab = b.dataset.t; }
+  else if(act==='tab'){ state.tab = b.dataset.t; if(BRIDGE && BRIDGE.syncTabOverlay) BRIDGE.syncTabOverlay(state.tab); }
   else if(act==='focus'){ state.focus = b.dataset.f; }
   else if(act==='sockgoal'){ state.sockGoal = b.dataset.g; }
   else if(act==='scan-reset'){ state.scanLog = []; }
@@ -1753,7 +2123,17 @@ document.addEventListener('click', e=>{
   else if(act==='pfd'){ if(!state.prismFd) state.prismFd={dl:0,wh:0}; const k=b.dataset.k; state.prismFd[k] = Math.max(0, Math.min(5, (+state.prismFd[k]||0) + (+b.dataset.d))); }
   else if(act==='mapae-star'){ if(!state.mapae) state.mapae={stars:0,pot3l:false}; state.mapae.stars = Math.max(0, Math.min(22, (+state.mapae.stars||0) + (+b.dataset.d))); }
   else if(act==='mapae-3l'){ if(!state.mapae) state.mapae={stars:0,pot3l:false}; state.mapae.pot3l = b.checked; }
-  else if(act==='gtier'){ getGemExpState().fodderTier = b.dataset.t; }
+  else if(act==='jwl-ov-open'){ if(BRIDGE && BRIDGE.openJewelOverlay) BRIDGE.openJewelOverlay(); return; }
+  else if(act==='jwl-ov-close'){ if(BRIDGE && BRIDGE.hideJewelOverlay) BRIDGE.hideJewelOverlay(); return; }
+  else if(act==='jwl-ov-scan'){ if(BRIDGE && BRIDGE.scanJewel) BRIDGE.scanJewel(); return; }
+  else if(act==='jwl-fuse-tech'){ const d=getDustState(); d.fuseTech = !d.fuseTech; }
+  else if(act==='jwl-lv'){ const j=getJwl(); j.curLv = Math.max(1, Math.min(4, +b.dataset.lv||1)); j.tgtLv = j.curLv + 1; j.matReq = jwlStepReq(j, j.curLv); if((j.goalLv||3)<=j.curLv) j.goalLv = Math.min(5, j.curLv + 1); if(j.matReq) j.matUsed = Math.min(j.matReq, +j.matUsed||0); }
+  else if(act==='jwl-goal'){ const j=getJwl(); j.goalLv = Math.max(j.curLv + 1, Math.min(5, +b.dataset.gl||3)); }
+  else if(act==='jwl-inv-reset'){ const j=getJwl(); j.inv = null; j.invSeenRows = []; }
+  else if(act==='jwl-tt-clear'){ const j=getJwl(); j.scannedJewels = []; j.lastTooltipSig = ''; }
+  else if(act==='jwl-fcol'){ getJwl().fCol = b.dataset.c || 'all'; }
+  else if(act==='jwl-fstat'){ getJwl().fStat = b.dataset.s || 'all'; }
+  else if(act==='jwl-type'){ getJwl().fodderType = b.dataset.t==='pris' ? 'pris' : 'color'; }
   else if(act==='dng-sub'){ getDng().sub = b.dataset.s; }
   else if(act==='dng-file'){ const d=getDng(); d.files[b.dataset.k] = b.checked; }
   else if(act==='dng-miss'){ const d=getDng(); d.missions[b.dataset.k] = b.checked; }
@@ -1762,7 +2142,7 @@ document.addEventListener('click', e=>{
   else if(act==='dng-ov-close'){ if(BRIDGE && BRIDGE.hideDungeonOverlay) BRIDGE.hideDungeonOverlay(); return; }
   else if(act==='dng-ov-scan'){ if(BRIDGE && BRIDGE.scanDungeon) BRIDGE.scanDungeon(); return; }
   else if(act==='dng-buff'){ const d=getDng(); d.buffs[b.dataset.k] = !d.buffs[b.dataset.k]; }
-  else if(act==='dng-room'){ const d=getDng(); d.roomsEntered=(d.roomsEntered||0)+1; d.weeklyPower=Math.max(0,(d.weeklyPower||0)-(d.drainPerRoom||5)); }
+  else if(act==='dng-room'){ const d=getDng(); d.roomsEntered=(d.roomsEntered||0)+1; d.weeklyPower=Math.max(0,(d.weeklyPower||0)-(d.drainPerRoom||1)); }
   else if(act==='dng-wp-reset'){ const d=getDng(); d.weeklyPower=d.weeklyMax||150; d.roomsEntered=0; }
   else if(act==='dng-pick'){ const d=getDng(), id=b.dataset.id, meta=DUNGEON_CODES.find(c=>c.id===id)||{}; if(meta.projectGroup){ d.ownedCodes=d.ownedCodes.filter(x=>!(DUNGEON_CODES.find(c=>c.id===x)||{}).projectGroup); } if(!d.ownedCodes.includes(id)) d.ownedCodes.push(id); d.offeredCodes=[]; if(d.ownedCodes.includes('broken_heart')&&d.ownedCodes.includes('creaking_limb')&&d.ownedCodes.includes('overheated_head')) d.fused=true; }
   else if(act==='dng-own'){ const d=getDng(), id=b.dataset.id; d.ownedCodes = d.ownedCodes.includes(id) ? d.ownedCodes.filter(x=>x!==id) : [...d.ownedCodes, id]; if(id==='overclocked') d.fused = d.ownedCodes.includes('overclocked'); }
@@ -1815,23 +2195,26 @@ const setAaTip = (m, hover) => {
 document.addEventListener('mouseover', e=>{ const b=e.target.closest('[data-act="autoadd"]'); if(b) setAaTip(b.dataset.m, true); });
 document.addEventListener('mouseout', e=>{ const b=e.target.closest('[data-act="autoadd"]'); if(b && !b.contains(e.relatedTarget)) setAaTip(null, false); });
 document.addEventListener('input', e=>{
-  const inp = e.target.closest('[data-dust],[data-leap],[data-gexp],[data-dng-q],[data-dng-num]'); if(!inp) return;
+  const inp = e.target.closest('[data-dust],[data-leap],[data-jwl-num],[data-jwl-q],[data-dng-q],[data-dng-num]'); if(!inp) return;
   if(inp.dataset.dust){
-    if(!state.dust) state.dust = {cur:0, spare:0, per:100};
-    state.dust[inp.dataset.dust] = Math.max(0, +inp.value || 0);
+    const d = getDustState();
+    d[inp.dataset.dust] = Math.max(0, +inp.value || 0);
     const out = document.getElementById('dust-out'); if(out) out.innerHTML = dustCalcHtml();
-    const go = document.getElementById('gexp-out'); if(go) go.innerHTML = gemExpCalcHtml();
+    const jo = document.getElementById('jwl-lv-out'); if(jo) jo.innerHTML = jewelLevelCalcHtml();
   } else if(inp.dataset.leap){
     if(!state.leap) state.leap = {cur:260, target:264};
     state.leap[inp.dataset.leap] = Math.max(1, Math.min(300, +inp.value || 1));
     const out = document.getElementById('leap-out'); if(out) out.innerHTML = leapCalcHtml();
-  } else if(inp.dataset.gexp){
-    const g = getGemExpState(), v = Math.max(0, +inp.value || 0);
-    if(inp.dataset.gexp.includes('.')){ const [obj,k]=inp.dataset.gexp.split('.'); g[obj][k] = obj==='tierExp' ? Math.max(1, v) : v; }
-    else g[inp.dataset.gexp] = v;
-    const go = document.getElementById('gexp-out'); if(go) go.innerHTML = gemExpCalcHtml();
-    const rem = Math.max(0, (+g.targetExp||0)-(+g.curExp||0));
-    GEM_TIERS.forEach(x=>{ const c=document.getElementById('grem-'+x.t); if(c) c.textContent = Math.ceil(rem/Math.max(1,+g.tierExp[x.t]||x.defExp)).toLocaleString()+' gems'; });
+  } else if(inp.dataset.jwlNum){
+    const j = getJwl(), req = jwlReqFor(j);
+    const v = Math.max(0, +inp.value || 0);
+    if(inp.dataset.jwlNum==='matReq'){ j.matReq = v; if(!j.stepReqs) j.stepReqs = {1:5,2:9,3:0,4:0}; j.stepReqs[j.curLv] = v; }
+    else j[inp.dataset.jwlNum] = (inp.dataset.jwlNum==='matUsed' && req) ? Math.min(req, v) : v;
+    const jo = document.getElementById('jwl-lv-out'); if(jo) jo.innerHTML = jewelLevelCalcHtml();
+  } else if(inp.hasAttribute('data-jwl-q')){
+    const j = getJwl(); j.q = inp.value || '';
+    const jl = document.getElementById('jwl-tt-list'); if(jl) jl.innerHTML = jewelScannedListHtml(j);
+    const jtl = document.getElementById('jwl-tab-tt-list'); if(jtl) jtl.innerHTML = jewelScannedListHtml(j, true);
   } else if(inp.hasAttribute('data-dng-q')){
     const d = getDng(); d.q = inp.value || '';
     const gl = document.getElementById('dng-gloss'); if(gl) gl.innerHTML = dngGlossaryHtml(d.q);
@@ -1839,9 +2222,11 @@ document.addEventListener('input', e=>{
     const d = getDng(); d[inp.dataset.dngNum] = Math.max(0, Math.min(d.weeklyMax||150, +inp.value || 0));
   }
   save();
+  const jdo = document.getElementById('jwl-ov-dust-out'); if(jdo) jdo.innerHTML = jewelOvDustSummaryHtml();
+  const jlo = document.getElementById('jwl-ov-lv-out'); if(jlo) jlo.innerHTML = jewelOvLvSummaryHtml();
 });
 
-if(OV || HUD || DNG){ document.body.classList.add('ov-mode'); document.documentElement.dataset.theme='dark'; document.body.innerHTML='<div id="ov-root"></div>'; }
+if(OV || HUD || DNG || JWL){ document.body.classList.add('ov-mode'); document.documentElement.dataset.theme='dark'; document.body.innerHTML='<div id="ov-root"></div>'; }
 else if(BRIDGE){ document.querySelector('header p').insertAdjacentHTML('afterend','<p>Overlay: hover an item in MapleStory and press <b>F8</b> to read it. <b>F9</b> shows or hides the overlay. Run the game in windowed or borderless mode.</p>'); }
 load(); render();
 </script>

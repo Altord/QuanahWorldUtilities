@@ -19,5 +19,11 @@ contextBridge.exposeInMainWorld('quanah', {
   hideDungeonOverlay: () => ipcRenderer.send('dng-overlay-hide'),
   resizeDungeonOverlay: h => ipcRenderer.send('dng-overlay-resize', h),
   scanDungeon: () => ipcRenderer.invoke('dng-scan'),
-  onDungeonScan: cb => ipcRenderer.on('dng-scan-result', (_e, msg) => cb(msg))
+  onDungeonScan: cb => ipcRenderer.on('dng-scan-result', (_e, msg) => cb(msg)),
+  openJewelOverlay: () => ipcRenderer.send('jwl-overlay-show'),
+  hideJewelOverlay: () => ipcRenderer.send('jwl-overlay-hide'),
+  resizeJewelOverlay: h => ipcRenderer.send('jwl-overlay-resize', h),
+  scanJewel: () => ipcRenderer.invoke('jwl-scan'),
+  onJewelScan: cb => ipcRenderer.on('jwl-scan-result', (_e, msg) => cb(msg)),
+  syncTabOverlay: tab => ipcRenderer.send('sync-tab-overlay', tab)
 });
