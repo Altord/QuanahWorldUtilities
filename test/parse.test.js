@@ -29,7 +29,7 @@ assert.strictEqual(r.slot, 0);
 assert.deepStrictEqual(r.lines, ['atk', 'dl', 'mage']);
 
 r = parseTooltip(`Gloves\n[Hologram] Critical Damage Enhancement Lv. +1\n[Hologram] Damage Enhancement Lv. +1\n[Hologram] Thief Lv.+1`);
-assert.deepStrictEqual(r.lines, ['crit', 'other', 'thief']);
+assert.deepStrictEqual(r.lines, ['crit', 'dmg', 'thief']);
 
 // Wrapped [Hologram] Attack Power & Magic ATT Enhancement\nSkill Lv. +1
 r = parseTooltip(`Libae's Supercharged Hat (Warrior)\nHat\n[Hologram] Attack Power & Magic ATT Enhancement\nSkill Lv. +1\nDimensional Leap Lv. +1\nWhite Hole Lv. +1`);

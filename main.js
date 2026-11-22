@@ -10,6 +10,30 @@ const webPreferences = { preload: path.join(__dirname, 'preload.js'), contextIso
 let mainWin, overlay, hud, dngWin, jewelWin, ocrProc, ocrQueue = [], ocrReady = false;
 const delay = ms => new Promise(r => setTimeout(r, ms));
 
+function ensureDngWin() {
+  if (dngWin && !dngWin.isDestroyed()) return dngWin;
+  const { workArea } = screen.getPrimaryDisplay();
+  dngWin = new BrowserWindow({
+    width: 390, height: 340, minWidth: 390, maxWidth: 390, x: workArea.x + 20, y: workArea.y + 60, show: false,
+    frame: false, transparent: false, backgroundColor: '#1b2230', alwaysOnTop: true, skipTaskbar: true,
+    hasShadow: true, focusable: true, webPreferences
+  });
+  dngWin.setAlwaysOnTop(true, 'screen-saver');
+  dngWin.loadFile(PAGE, { query: { dungeon: '1' } });
+  return dngWin;
+}
+function ensureJewelWin() {
+  if (jewelWin && !jewelWin.isDestroyed()) return jewelWin;
+  const { workArea } = screen.getPrimaryDisplay();
+  jewelWin = new BrowserWindow({
+    width: 390, height: 320, minWidth: 390, maxWidth: 390, x: workArea.x + 20, y: workArea.y + 420, show: false,
+    frame: false, transparent: false, backgroundColor: '#1b2230', alwaysOnTop: true, skipTaskbar: true,
+    hasShadow: true, focusable: true, webPreferences
+  });
+  jewelWin.setAlwaysOnTop(true, 'screen-saver');
+  jewelWin.loadFile(PAGE, { query: { jewel: '1' } });
+  return jewelWin;
+}
 function createWindows() {
   mainWin = new BrowserWindow({ width: 1240, height: 900, title: 'Quanah World Utilities', webPreferences });
   mainWin.setMenuBarVisibility(false);
@@ -17,9 +41,9 @@ function createWindows() {
 
   const { workArea } = screen.getPrimaryDisplay();
   overlay = new BrowserWindow({
-    width: 430, height: 260, x: workArea.x + workArea.width - 450, y: workArea.y + 60,
-    frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true,
-    resizable: false, hasShadow: false, focusable: false, webPreferences
+    width: 430, height: 260, minWidth: 430, maxWidth: 430, x: workArea.x + workArea.width - 450, y: workArea.y + 60,
+    frame: false, transparent: false, backgroundColor: '#1b2230', alwaysOnTop: true, skipTaskbar: true,
+    hasShadow: true, focusable: true, webPreferences
   });
   overlay.setAlwaysOnTop(true, 'screen-saver'); // stays above borderless-fullscreen games
   overlay.loadFile(PAGE, { query: { overlay: '1' } });
@@ -28,22 +52,6 @@ function createWindows() {
   };
   overlay.on('show', sendOvState);
   overlay.on('hide', sendOvState);
-
-  dngWin = new BrowserWindow({
-    width: 390, height: 340, x: workArea.x + 20, y: workArea.y + 60, show: false,
-    frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true,
-    resizable: false, hasShadow: false, focusable: false, webPreferences
-  });
-  dngWin.setAlwaysOnTop(true, 'screen-saver');
-  dngWin.loadFile(PAGE, { query: { dungeon: '1' } });
-
-  jewelWin = new BrowserWindow({
-    width: 390, height: 320, x: workArea.x + 20, y: workArea.y + 420, show: false,
-    frame: false, transparent: true, alwaysOnTop: true, skipTaskbar: true,
-    resizable: false, hasShadow: false, focusable: false, webPreferences
-  });
-  jewelWin.setAlwaysOnTop(true, 'screen-saver');
-  jewelWin.loadFile(PAGE, { query: { jewel: '1' } });
 
   hud = new BrowserWindow({
     width: 320, height: 80, show: false, opacity: 0,
@@ -146,7 +154,6 @@ function detectSockets(img, sf) {
             const [rr, gr, br] = px(Math.min(w - 1, start + run + 5), yTop);
             if (isBoxBg(r2, g2, b2) && isBoxBg(r3, g3, b3) && isBoxBg(r4, g4, b4) && isBoxBg(r5, g5, b5) && Math.max(rl, gl, bl) < 75 && Math.max(rr, gr, br) < 75) {
               const out = readBoxSockets(px, w, h, start, y, run);
-              console.log('SOCK_DBG:', { bx: start, by: y, bw: run, out });
               if (out.length) return out;
             }
           }
@@ -241,13 +248,34 @@ function startOcrWorker() {
         const msg = JSON.parse(line);
         if (msg.ready) { ocrReady = true; continue; }
         const cb = ocrQueue.shift();
-        if (cb) cb(msg.error ? new Error(msg.error) : null, msg.fg !== undefined ? msg : (msg.text || ''));
+        if (cb) cb(msg.error ? new Error(msg.error) : null, (msg.fg !== undefined || msg.fallback !== undefined || msg.sockets !== undefined) ? msg : (msg.text || ''));
       } catch (e) {}
     }
   });
   ocrProc.on('exit', () => {
     ocrProc = null; ocrReady = false;
     while (ocrQueue.length) ocrQueue.shift()(new Error('OCR worker exited'));
+  });
+}
+
+function fastScanAroundCursor() {
+  if (!ocrProc || !ocrReady) return Promise.resolve({ fallback: true });
+  const pt = screen.getCursorScreenPoint();
+  const d = screen.getDisplayNearestPoint(pt);
+  const sf = d.scaleFactor || 1;
+  const physPt = screen.dipToScreenPoint(pt);
+  const physD = screen.dipToScreenRect(null, d.bounds);
+  const halfW = Math.round(540 * sf);
+  const x0 = Math.max(physD.x, physPt.x - halfW);
+  const x1 = Math.min(physD.x + physD.width, physPt.x + halfW);
+  const y0 = Math.max(physD.y, physPt.y - Math.round(280 * sf));
+  const y1 = Math.min(physD.y + physD.height, physPt.y + Math.round(1060 * sf));
+  const w = x1 - x0, h = y1 - y0;
+  if (w < 40 || h < 40) return Promise.resolve({ fallback: true });
+  const scale = sf < 2 ? 2 : 1;
+  return new Promise(resolve => {
+    ocrQueue.push((err, res) => resolve(err || !res ? { fallback: true } : res));
+    ocrProc.stdin.write(`FAST_SCAN ${x0} ${y0} ${w} ${h} ${scale} ${sf}\n`);
   });
 }
 
@@ -274,12 +302,12 @@ function fadeHud(to) {
   if (!hud || hud.isDestroyed() || hudTarget === to) return;
   hudTarget = to;
   clearInterval(hudFade);
-  const step = to > 0 ? 0.28 : -0.32;
+  if (to >= 1) { hud.setOpacity(1); return; } // instant popup when showing!
   hudFade = setInterval(() => {
     if (!hud || hud.isDestroyed()) { clearInterval(hudFade); return; }
-    const next = Math.max(0, Math.min(1, hud.getOpacity() + step));
+    const next = Math.max(0, hud.getOpacity() - 0.35);
     hud.setOpacity(next);
-    if ((step > 0 && next >= 1) || (step < 0 && next <= 0)) clearInterval(hudFade);
+    if (next <= 0) clearInterval(hudFade);
   }, 12);
 }
 let lastKeyAt = { f7: 0, f8: 0, f9: 0 };
@@ -317,6 +345,7 @@ function showOnlyOverlay(target) {
       target.setBounds({ x, y, width: b.width, height: b.height });
     }
     target.showInactive();
+    target.webContents.send('sync-state');
   }
 }
 function triggerF9() {
@@ -327,13 +356,17 @@ function triggerF9() {
   }
 }
 
-let scanning = false, autoScan = true;
+let scanning = false, autoScan = true, fgInFlight = false;
 let lastPt = null, stillSince = 0, scannedAt = null;
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 
 const hoverTimer = setInterval(() => {
-  if (scanning || !overlay || overlay.isDestroyed()) return;
+  if (fgInFlight || scanning || dngScanning || jwlScanning || !overlay || overlay.isDestroyed()) return;
+  const anyVisible = [overlay, dngWin, jewelWin].some(w => w && !w.isDestroyed() && w.isVisible());
+  if (!anyVisible) return;
+  fgInFlight = true;
   getForegroundState().then(st => {
+    fgInFlight = false;
     if (st.f7) triggerF7();
     if (st.f8) triggerF8();
     if (st.f9) triggerF9();
@@ -352,7 +385,7 @@ const hoverTimer = setInterval(() => {
       return;
     }
     if (jewelWin && !jewelWin.isDestroyed() && jewelWin.isVisible()) {
-      if (!scanning && !jwlScanning && Date.now() - lastJwlAt >= 1200) {
+      if (!scanning && !jwlScanning && Date.now() - lastJwlAt >= 2000) {
         lastJwlAt = Date.now();
         scanJewelScreen('auto');
       }
@@ -364,17 +397,17 @@ const hoverTimer = setInterval(() => {
       if (scannedAt && dist(pt, scannedAt) > 38) { scannedAt = null; fadeHud(0); }
       return;
     }
-    if (!scannedAt && Date.now() - stillSince >= 60) {
+    if (!scannedAt && Date.now() - stillSince >= 20) {
       scannedAt = pt;
       scan(false);
     }
-  });
+  }).catch(() => { fgInFlight = false; });
 }, 40);
 let dngScanning = false, dngWasBlack = false, lastDngCheckAt = 0, lastDngOcrAt = 0;
 let jwlScanning = false, lastJwlAt = 0;
 async function checkDungeonScreen() {
   const now = Date.now();
-  if (now - lastDngCheckAt < 350 || dngScanning) return;
+  if (now - lastDngCheckAt < 600 || dngScanning) return;
   lastDngCheckAt = now;
   try {
     const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
@@ -391,7 +424,7 @@ async function checkDungeonScreen() {
       await delay(300);
       return scanDungeonScreen('room');
     }
-    if (now - lastDngOcrAt >= 1200) {
+    if (now - lastDngOcrAt >= 2000) {
       lastDngOcrAt = now;
       scanDungeonScreen('auto');
     }
@@ -569,8 +602,23 @@ function detectJewelInventory(img) {
     return null;
   } catch (e) { return null; }
 }
-async function captureScreenOcrText(mode = 'dungeon') {
-  const d = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+const lastScreenFp = { dungeon: '', jewel: '' };
+function imgFingerprint(img, extra = '') {
+  const bmp = img.toBitmap();
+  const len = bmp.length;
+  if (!len) return '';
+  const step = Math.max(4, Math.floor(len / 256) & ~3);
+  let h1 = 2166136261, h2 = 0;
+  for (let i = 0; i < len; i += step) {
+    const v = ((bmp[i] >> 3) << 10) | ((bmp[i + 1] >> 3) << 5) | (bmp[i + 2] >> 3);
+    h1 = Math.imul(h1 ^ v, 16777619);
+    h2 = (h2 + v) | 0;
+  }
+  return `${len}:${h1 >>> 0}:${h2 >>> 0}:${extra}`;
+}
+async function captureScreenOcrText(mode = 'dungeon', trigger = 'manual') {
+  const pt = screen.getCursorScreenPoint();
+  const d = screen.getDisplayNearestPoint(pt);
   const sf = d.scaleFactor || 1;
   const sources = await desktopCapturer.getSources({
     types: ['screen'], thumbnailSize: { width: Math.round(d.size.width * sf), height: Math.round(d.size.height * sf) }
@@ -578,6 +626,10 @@ async function captureScreenOcrText(mode = 'dungeon') {
   const src = sources.find(s => s.display_id === String(d.id)) || sources[0];
   if (!src) return null;
   const rawImg = src.thumbnail;
+  const fpExtra = mode === 'jewel' ? `${Math.round(pt.x / 16)},${Math.round(pt.y / 16)}` : '';
+  const fp = imgFingerprint(rawImg, fpExtra);
+  if (trigger === 'auto' && fp && fp === lastScreenFp[mode]) return null;
+  lastScreenFp[mode] = fp;
   const detectedBuffs = mode === 'dungeon' ? detectBuffBar(rawImg, sf) : undefined;
   let jewelInv = undefined;
   let invDustText = '';
@@ -598,7 +650,7 @@ async function captureScreenOcrText(mode = 'dungeon') {
   if (invDustText) text = `INV_DUST:${invDustText}\n` + text;
   let ttText = '';
   if (mode === 'jewel') {
-    const pt = screen.getCursorScreenPoint(), rs = rawImg.getSize();
+    const rs = rawImg.getSize();
     const jb = jewelWin && !jewelWin.isDestroyed() ? jewelWin.getBounds() : null;
     const inOverlay = jb && pt.x >= jb.x && pt.x <= jb.x + jb.width && pt.y >= jb.y && pt.y <= jb.y + jb.height;
     const cx = Math.round((pt.x - d.bounds.x) * sf), cy = Math.round((pt.y - d.bounds.y) * sf);
@@ -643,18 +695,17 @@ async function captureScreenOcrText(mode = 'dungeon') {
     const rs = rawImg.getSize();
     const crop = rawImg.crop({ x: 0, y: Math.round(rs.height * 0.12), width: rs.width, height: Math.round(rs.height * 0.68) });
     const cs = crop.getSize();
-    const zoomed = crop.resize({ width: Math.min(3840, Math.round(cs.width * 2.5)), quality: 'best' });
+    const zoomed = crop.resize({ width: Math.min(2560, Math.round(cs.width * 2)), quality: 'best' });
     const extra = await recognizeBMP(toHighContrastBMP(zoomed));
     if (extra) text = text + '\n' + extra;
   }
-  if (mode === 'jewel') console.log('JWL_SCAN:', { jewelInv, invDustText, ttText });
   return mode === 'dungeon' ? { text, detectedBuffs } : { text, jewelInv };
 }
 async function scanSideOverlay(win, channel, getLock, setLock, trigger = 'manual', mode = 'dungeon') {
   if (getLock() || !win || win.isDestroyed()) return;
   setLock(true);
   try {
-    const res = await captureScreenOcrText(mode);
+    const res = await captureScreenOcrText(mode, trigger);
     if (!res) return;
     if (win && !win.isDestroyed()) {
       win.webContents.send(channel, { status: 'done', text: res.text, detectedBuffs: res.detectedBuffs, jewelInv: res.jewelInv, trigger, at: Date.now() });
@@ -676,16 +727,20 @@ async function scan(fromUI = false) {
     if (hud && !hud.isDestroyed()) hud.webContents.send('scan-result', { ...msg, pt });
   };
   try {
-    overlay.showInactive();
+    if (!overlay.isVisible()) overlay.showInactive();
     if (fromUI) {
       send({ status: 'waiting' });
       await delay(1500);
     }
     send({ status: 'scanning', manual: fromUI });
-    const { bmp, sockets } = await capture();
-    const text = await recognizeBMP(bmp);
-    console.log('OCR:\n' + text, sockets ? 'SOCKETS: ' + sockets.join(',') : '');
-    send({ status: 'done', text, sockets, manual: fromUI });
+    const fast = await fastScanAroundCursor();
+    if (fast && !fast.fallback && typeof fast.text === 'string') {
+      send({ status: 'done', text: fast.text, sockets: fast.sockets || null, manual: fromUI });
+    } else {
+      const { bmp, sockets } = await capture();
+      const text = await recognizeBMP(bmp);
+      send({ status: 'done', text, sockets, manual: fromUI });
+    }
   } catch (e) {
     send({ status: 'error', error: String(e && e.message || e) });
   } finally { scanning = false; }
@@ -705,12 +760,12 @@ app.whenReady().then(() => {
     const wa = screen.getDisplayNearestPoint({ x: b.x, y: b.y }).workArea;
     const maxH = Math.max(200, wa.y + wa.height - b.y - 12);
     const nextH = Math.min(Math.ceil(h), maxH);
-    if (b.height !== nextH || b.width !== 430) overlay.setBounds({ x: b.x, y: b.y, width: 430, height: nextH });
+    if (Math.abs(b.height - nextH) > 4 || b.width !== 430) overlay.setBounds({ x: b.x, y: b.y, width: 430, height: nextH });
   });
   ipcMain.on('hud-show', (_e, w, h) => {
     if (!hud || !scannedAt) return;
     const d = screen.getDisplayNearestPoint(scannedAt).workArea;
-    const W = Math.min(Math.max(Math.ceil(w), 180), 380), H = Math.min(Math.ceil(h), 240);
+    const W = Math.min(Math.max(Math.ceil(w), 210), 460), H = Math.min(Math.ceil(h), 290);
     const x = Math.min(d.x + d.width - W - 8, Math.max(d.x + 8, scannedAt.x + 18));
     const y = Math.max(d.y + 8, scannedAt.y - H - 14);
     const nx = Math.round(x), ny = Math.round(y);
@@ -726,7 +781,7 @@ app.whenReady().then(() => {
   ipcMain.on('main-show', () => { if (mainWin) { mainWin.show(); mainWin.focus(); } });
   ipcMain.on('sync-state', e => {
     for (const w of BrowserWindow.getAllWindows()) {
-      if (w.webContents !== e.sender) w.webContents.send('sync-state');
+      if (w.webContents !== e.sender && !w.isDestroyed() && w.isVisible()) w.webContents.send('sync-state');
     }
   });
   ipcMain.on('overlay-show', () => showOnlyOverlay(overlay));
@@ -736,22 +791,23 @@ app.whenReady().then(() => {
     const b = win.getBounds();
     const wa = screen.getDisplayNearestPoint({ x: b.x, y: b.y }).workArea;
     const maxH = Math.max(220, wa.y + wa.height - b.y - 12);
-    win.setBounds({ x: b.x, y: b.y, width: 390, height: Math.min(Math.ceil(h), maxH) });
+    const nextH = Math.min(Math.ceil(h), maxH);
+    if (Math.abs(b.height - nextH) > 4 || b.width !== 390) win.setBounds({ x: b.x, y: b.y, width: 390, height: nextH });
   };
-  ipcMain.on('dng-overlay-show', () => showOnlyOverlay(dngWin));
+  ipcMain.on('dng-overlay-show', () => showOnlyOverlay(ensureDngWin()));
   ipcMain.on('dng-overlay-hide', () => { if (dngWin && !dngWin.isDestroyed()) { if (dngWin.isVisible()) saveOverlayPos(dngWin); dngWin.hide(); } });
   ipcMain.on('dng-overlay-resize', (_e, h) => resizeSideOverlay(dngWin, h));
-  ipcMain.handle('dng-scan', () => scanDungeonScreen('manual'));
-  ipcMain.on('jwl-overlay-show', () => showOnlyOverlay(jewelWin));
+  ipcMain.handle('dng-scan', () => { ensureDngWin(); return scanDungeonScreen('manual'); });
+  ipcMain.on('jwl-overlay-show', () => showOnlyOverlay(ensureJewelWin()));
   ipcMain.on('jwl-overlay-hide', () => { if (jewelWin && !jewelWin.isDestroyed()) { if (jewelWin.isVisible()) saveOverlayPos(jewelWin); jewelWin.hide(); } });
   ipcMain.on('jwl-overlay-resize', (_e, h) => resizeSideOverlay(jewelWin, h));
-  ipcMain.handle('jwl-scan', () => scanJewelScreen('manual'));
+  ipcMain.handle('jwl-scan', () => { ensureJewelWin(); return scanJewelScreen('manual'); });
   ipcMain.on('sync-tab-overlay', (_e, tab) => {
     const anyOpen = [overlay, dngWin, jewelWin].some(w => w && !w.isDestroyed() && w.isVisible());
     if (!anyOpen) return;
     if (tab === 'solver') showOnlyOverlay(overlay);
-    else if (tab === 'dungeon') showOnlyOverlay(dngWin);
-    else if (tab === 'jewels') showOnlyOverlay(jewelWin);
+    else if (tab === 'dungeon') showOnlyOverlay(ensureDngWin());
+    else if (tab === 'jewels') showOnlyOverlay(ensureJewelWin());
   });
 });
 app.on('will-quit', () => { globalShortcut.unregisterAll(); if (ocrProc) ocrProc.kill(); });
